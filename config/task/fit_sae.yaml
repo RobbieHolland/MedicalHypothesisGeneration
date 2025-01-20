@@ -1,0 +1,10 @@
+batch_size: 10
+max_steps: 100
+lr: 0.0005
+use_ghost_grads: False
+lp_norm: 1
+sparsity_coefficient: 0.3
+
+dead_feature_threshold: 1e-8
+feature_sampling_window: 100
+validation_interval: 20

@@ -1,0 +1,14 @@
+defaults:
+  - _self_
+  - paths: stanford
+  - multimodal_pretraining: default
+  - sparse_autoencoder: basic
+  - data: abdominal_ct
+  - task: build_vector_database
+
+wandb_project: 'MultimodalMedicalHG'
+wandb_mode: online
+wandb_log_frequency: 1
+wandb_entity: ${paths.wandb_entity}
+
+seed: 1234
