@@ -13,3 +13,5 @@ wandb_entity: ${paths.wandb_entity}
 
 seed: 1234
 pretrained_model_dir: ${paths.pretrained_model_dir}
+
+base_dir: ${paths.base_dir}

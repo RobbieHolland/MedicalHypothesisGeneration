@@ -1,7 +1,7 @@
 batch_size: 2000
 max_steps: 300
 lr: 0.0005
-use_ghost_grads: False
+use_ghost_grads: True
 lp_norm: 1
 sparsity_coefficient: 0 # Using TopK in place of L1 penalty
 
@@ -10,3 +10,6 @@ feature_sampling_window: 100
 
 check_val_every_n_epochs: 5
 validation_interval: 20
+
+# top_k: 100
+top_k: 10

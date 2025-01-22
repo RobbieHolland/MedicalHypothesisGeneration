@@ -60,3 +60,4 @@ wandb/
 checkpoints/
 lightning_logs/
 **/pretrained_models/**
+*.jpg

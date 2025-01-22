@@ -5,11 +5,14 @@ import wandb
 from torch.utils.data import TensorDataset, Dataset, DataLoader
 import pytorch_lightning as pl
 import os
+from SparseAutoencoder.model.sparse_autoencoder import SparseAutoencoder
 
 class TrainSparseAutoencoder(pl.LightningModule):
-    def __init__(self, sae: torch.nn.Module, config):
+    def __init__(self, config=None):
         super().__init__()
-        self.sae = sae
+        self.save_hyperparameters()
+
+        self.sae = SparseAutoencoder(config)
         self.config = config
         self.frac_active_list = []
         self.n_training_tokens = 0
@@ -147,10 +150,7 @@ def fit_sae(config):
         "test": torch.load(f"{config.data.vector_database_in}/test.pt"),
     }
 
-    from SparseAutoencoder.model.sparse_autoencoder import SparseAutoencoder
-    sae_model = SparseAutoencoder(config)
-
-    lightning_module = TrainSparseAutoencoder(sae=sae_model, config=config)
+    lightning_module = TrainSparseAutoencoder(config=config)
     data_module = ActivationDataModule(config, datasets)
 
     check_val_every_n_epoch = None

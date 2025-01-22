@@ -30,7 +30,7 @@ class SparseAutoencoder(pl.LightningModule):
 
         self.b_enc = nn.Parameter(torch.zeros(self.config.sparse_autoencoder.n_concepts, dtype=self.dtype))
         self.b_pre = nn.Parameter(torch.zeros(self.config.sparse_autoencoder.n_tokens, dtype=self.dtype))
-        self.top_K = 100
+        self.top_K = config.task.top_k
 
         self.reconstruction_loss = torch.nn.MSELoss()
 
@@ -47,6 +47,11 @@ class SparseAutoencoder(pl.LightningModule):
         x_hat = z_sparse @ self.W_dec + self.b_pre  # shape: [batch_size, in_dim]
         
         return z, z_sparse, x_hat
+    
+    def latent(self, x):
+        z, z_sparse, x_hat = self.forward_topk_sae(x)
+        
+        return z_sparse
 
     def forward(self, x: torch.Tensor, dead_neuron_mask: torch.Tensor | None = None):
         x = x.to(self.dtype)
@@ -70,29 +75,26 @@ class SparseAutoencoder(pl.LightningModule):
         mse_loss = self.reconstruction_loss(x_hat, x)
 
         mse_loss_ghost_resid = torch.tensor(0.0, dtype=self.dtype, device=self.device)
-        if (
-            self.config.task.use_ghost_grads
-            and self.training
-            and dead_neuron_mask is not None
-            and dead_neuron_mask.sum() > 0
-        ):
-            residual = x - x_hat
-            residual_centred = residual - residual.mean(dim=0, keepdim=True)
-            l2_norm_residual = torch.norm(residual, dim=-1)
+        if self.config.task.use_ghost_grads and self.training:
+            dead_neuron_mask = (z_sparse.mean(dim=0).abs() < self.config.task.dead_feature_threshold)
+            if dead_neuron_mask.sum() > 0:
+                residual = x - x_hat
+                residual_centred = residual - residual.mean(dim=0, keepdim=True)
+                l2_norm_residual = torch.norm(residual, dim=-1)
 
-            z_sparse_dead_neurons_only = torch.exp(z[:, dead_neuron_mask])
-            ghost_out = z_sparse_dead_neurons_only @ self.W_dec[dead_neuron_mask, :]
-            l2_norm_ghost_out = torch.norm(ghost_out, dim=-1)
-            norm_scaling_factor = l2_norm_residual / (1e-6 + l2_norm_ghost_out * 2)
-            ghost_out = ghost_out * norm_scaling_factor[:, None].detach()
+                z_sparse_dead_neurons_only = torch.exp(z[:, dead_neuron_mask])
+                ghost_out = z_sparse_dead_neurons_only @ self.W_dec[dead_neuron_mask, :]
+                l2_norm_ghost_out = torch.norm(ghost_out, dim=-1)
+                norm_scaling_factor = l2_norm_residual / (1e-6 + l2_norm_ghost_out * 2)
+                ghost_out *= norm_scaling_factor[:, None].detach()
 
-            mse_loss_ghost_resid = (
-                (ghost_out - residual.detach().float()).pow(2)
-                / (residual_centred.detach().pow(2).sum(dim=-1, keepdim=True).sqrt())
-            )
-            mse_rescaling_factor = (mse_loss / (mse_loss_ghost_resid + 1e-6)).detach()
-            mse_loss_ghost_resid = mse_rescaling_factor * mse_loss_ghost_resid
-            mse_loss_ghost_resid = mse_loss_ghost_resid.mean()
+                mse_loss_ghost_resid = (
+                    (ghost_out - residual.detach().float()).pow(2)
+                    / (residual_centred.detach().pow(2).sum(dim=-1, keepdim=True).sqrt())
+                )
+                mse_rescaling_factor = (mse_loss / (mse_loss_ghost_resid + 1e-6)).detach()
+                mse_loss_ghost_resid = mse_rescaling_factor * mse_loss_ghost_resid
+                mse_loss_ghost_resid = mse_loss_ghost_resid.mean()
 
         sparsity = torch.norm(z_sparse, p=self.config.task.lp_norm, dim=1).mean()
         l1_loss = self.config.task.sparsity_coefficient * sparsity
