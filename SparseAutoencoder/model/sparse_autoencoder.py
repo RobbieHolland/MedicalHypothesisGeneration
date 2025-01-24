@@ -34,18 +34,23 @@ class SparseAutoencoder(pl.LightningModule):
 
         self.reconstruction_loss = torch.nn.MSELoss()
 
-    def forward_topk_sae(self, x):
-        # Pre-activation
-        z = (x - self.b_pre) @ self.W_enc + self.b_enc  # shape: [batch_size, hidden_dim]
+    def forward_topk_sae(self, x, K=None, mask=None):
+        if K is None:
+            K = self.top_K
+
+        z = (x - self.b_pre) @ self.W_enc + self.b_enc  # [batch_size, hidden_dim]
         
-        # TopK operator: zero out all but the K largest elements per row
-        topk_vals, topk_idx = torch.topk(z, k=self.top_K, dim=1)
-        z_sparse = torch.zeros_like(z).scatter_(1, topk_idx, topk_vals)
-        # z_sparse = torch.relu(z)
+        if mask is None:
+            mask = torch.arange(z.shape[1], device=z.device)
         
-        # Reconstruction
-        x_hat = z_sparse @ self.W_dec + self.b_pre  # shape: [batch_size, in_dim]
+        z_sub = z[:, mask]
+        topk_vals, topk_idx = torch.topk(z_sub, k=min(K, z_sub.shape[1]), dim=1)
+        z_sparse_sub = torch.zeros_like(z_sub).scatter_(1, topk_idx, topk_vals)
         
+        z_sparse = torch.zeros_like(z)
+        z_sparse[:, mask] = z_sparse_sub
+        
+        x_hat = z_sparse @ self.W_dec + self.b_pre
         return z, z_sparse, x_hat
     
     def latent(self, x):
@@ -74,32 +79,23 @@ class SparseAutoencoder(pl.LightningModule):
 
         mse_loss = self.reconstruction_loss(x_hat, x)
 
-        mse_loss_ghost_resid = torch.tensor(0.0, dtype=self.dtype, device=self.device)
-        if self.config.task.use_ghost_grads and self.training:
-            dead_neuron_mask = (z_sparse.mean(dim=0).abs() < self.config.task.dead_feature_threshold)
-            if dead_neuron_mask.sum() > 0:
-                residual = x - x_hat
-                residual_centred = residual - residual.mean(dim=0, keepdim=True)
-                l2_norm_residual = torch.norm(residual, dim=-1)
-
-                z_sparse_dead_neurons_only = torch.exp(z[:, dead_neuron_mask])
-                ghost_out = z_sparse_dead_neurons_only @ self.W_dec[dead_neuron_mask, :]
-                l2_norm_ghost_out = torch.norm(ghost_out, dim=-1)
-                norm_scaling_factor = l2_norm_residual / (1e-6 + l2_norm_ghost_out * 2)
-                ghost_out *= norm_scaling_factor[:, None].detach()
-
-                mse_loss_ghost_resid = (
-                    (ghost_out - residual.detach().float()).pow(2)
-                    / (residual_centred.detach().pow(2).sum(dim=-1, keepdim=True).sqrt())
-                )
-                mse_rescaling_factor = (mse_loss / (mse_loss_ghost_resid + 1e-6)).detach()
-                mse_loss_ghost_resid = mse_rescaling_factor * mse_loss_ghost_resid
-                mse_loss_ghost_resid = mse_loss_ghost_resid.mean()
-
+        # Lp regularization
         sparsity = torch.norm(z_sparse, p=self.config.task.lp_norm, dim=1).mean()
         l1_loss = self.config.task.sparsity_coefficient * sparsity
-        loss = mse_loss + l1_loss + mse_loss_ghost_resid
-        # loss = mse_loss + l1_loss
+        
+        # Aux (ghost) loss
+        mse_loss_aux = torch.tensor(0.0, device=x.device, dtype=x.dtype)
+        if self.config.task.use_ghost_grads and self.training:
+            dead_mask = (z_sparse.mean(dim=0).abs() < self.config.task.dead_feature_threshold)
+            if dead_mask.sum() > 0:
+                _, _, x_hat_aux = self.forward_topk_sae(x, K=self.config.task.kaux, mask=dead_mask)
+                residual = x - x_hat
+                ghost_res = (residual.detach() - x_hat_aux).pow(2).mean()
+                if not torch.isnan(ghost_res):
+                    mse_loss_aux = self.config.task.aux_scale * ghost_res
+
+        # loss = mse_loss + l1_loss + mse_loss_aux
+        loss = mse_loss + mse_loss_aux
 
         return_dict = {
             "x_hat": x_hat,
@@ -108,7 +104,7 @@ class SparseAutoencoder(pl.LightningModule):
             "loss": loss,
             "mse_loss": mse_loss,
             "l1_loss": l1_loss,
-            # "ghost_grad_loss": mse_loss_ghost_resid,
+            "ghost_grad_loss": mse_loss_aux,
         }
         return return_dict
 

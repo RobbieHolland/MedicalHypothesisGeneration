@@ -1,5 +1,5 @@
 wandb_group: SAE_Analysis
-sae_checkpoint: /dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MultimodalMedicalHG/SAE/giddy-elevator-83/epoch=9-step=80.ckpt
+sae_checkpoint: /dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MultimodalMedicalHG/SAE/royal-puddle-123/epoch=34-step=280.ckpt
 
 batch_size: 10
 max_steps: 1000000

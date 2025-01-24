@@ -6,6 +6,7 @@ defaults:
   - data: abdominal_ct
   - task: build_vector_database
 
+wandb_api_token: ${paths.wandb_api_token}
 wandb_project: 'MultimodalMedicalHG'
 wandb_mode: online
 wandb_log_frequency: 1

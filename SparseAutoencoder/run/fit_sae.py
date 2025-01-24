@@ -142,7 +142,8 @@ class ActivationDataModule(pl.LightningDataModule):
 
 @hydra.main(config_path="../../config", config_name="default", version_base=None)
 def fit_sae(config):
-    wandb.init(project=config.wandb_project, entity=config.wandb_entity, mode=config.wandb_mode, config=dict(config))
+    from util.wandb import init_wandb
+    init_wandb(config)
 
     datasets = {
         "train": torch.load(f"{config.data.vector_database_in}/train.pt"),
