@@ -62,3 +62,5 @@ lightning_logs/
 **/pretrained_models/**
 *.jpg
 *.csv
+slurm/
+*.ipynb
