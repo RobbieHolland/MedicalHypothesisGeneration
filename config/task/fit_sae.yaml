@@ -4,7 +4,7 @@ batch_size: 2000
 max_steps: 300
 lr: 0.0005
 use_ghost_grads: True
-aux_scale: 0.03
+aux_scale: 0.1
 
 lp_norm: 1
 sparsity_coefficient: 0 # Using TopK in place of L1 penalty
@@ -16,5 +16,5 @@ check_val_every_n_epochs: 5
 validation_interval: 20
 
 # top_k: 100
-top_k: 25
-kaux: 250
+top_k: 64
+kaux: 512

@@ -1,8 +1,6 @@
 import hydra
 import torch
-import pytorch_lightning as pl
 import wandb
-from torch.utils.data import DataLoader
 import os
 import pandas as pd
 import numpy as np
@@ -58,124 +56,75 @@ class SAEAnalysis:
 
         return avg_selectivity, max_selectivity
 
-    def compute_statistics(self, sae_output):
-        # Load data
-        label_path = '/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels.csv'
-        raw_data = pd.read_csv(label_path)
-        raw_data.columns = [str(float(col)) if i in range(1, 1693) else col for i, col in enumerate(raw_data.columns)]
-
-        phewas_mapping_file = os.path.join(self.config.base_dir, self.config.data.phewas_mapping)
-        phewas_mappings = pd.read_csv(phewas_mapping_file)
-
-        # Ensure consistent data types
-        phewas_mappings['phecode'] = phewas_mappings['phecode'].astype(float).astype(str).str.strip()
-
-        disease_search_space = self.config.data.disease_search_space['Intensity/contrast']
-        phewas_mappings = phewas_mappings.loc[phewas_mappings['phenotype'].isin(disease_search_space)]
-        phecode_columns = phewas_mappings['phecode']
-        raw_data = raw_data[['anon_accession'] + phecode_columns.tolist()]
-
-        # Merge
-        # assert set(sae_output['anon_accession']) == set(raw_data['anon_accession']), "Mismatch in anon_accession!"
-        sae_output = sae_output.merge(raw_data, on='anon_accession', how='inner')
-
+    def compute_statistics(self, sae_output, phecode_columns, phewas_mappings):
         # Features
         feature_columns = [col for col in sae_output.columns if col.startswith("Concept")]
-        active_features = [col for col in feature_columns if sae_output[col].sum() > 0]
+        active_features = [col for col in feature_columns if sae_output[col].var() > 0]
 
-        # 1) Compute original selectivity
-        avg_sel_original, max_sel_original = self.compute_selectivity_matrix(
-            sae_output, phecode_columns, active_features
+        ### Calculate relationships and p-values
+        from SparseAutoencoder.statistics.logistic_regression import LogisticRegressionAnalysis
+        selectivity_analysis = LogisticRegressionAnalysis(
+            sae_output=sae_output,
+            phecode_columns=phecode_columns,
+            active_features=active_features,
+            output_dir=self.output_dir,
+            config=self.config
         )
 
-        # Process & plot original average selectivity
-        avg_sel_mat = pd.DataFrame(avg_sel_original, index=phecode_columns, columns=active_features)
-        self.plot_selectivity_matrix(avg_sel_mat)
-        plt.title("Average Selectivity Matrix")
-        plt.savefig(os.path.join(self.output_dir, 'average_selectivity_matrix.jpg'), dpi=300)
-        plt.close()
-
-        # Process & plot original max selectivity
-        max_sel_mat = pd.DataFrame(max_sel_original, index=phecode_columns, columns=active_features)
-        self.plot_selectivity_matrix(max_sel_mat)
-        plt.title("Maximum Selectivity Matrix")
-        plt.savefig(os.path.join(self.output_dir, 'maximum_selectivity_matrix.jpg'), dpi=300)
-        plt.close()
-
-        # 2) Bootstrap null distributions
-        bootstrap_avg = []
-        bootstrap_max = []
-        for _ in tqdm(range(self.config.task.n_bootstrap)):
-            boot_data = sae_output.sample(frac=1, replace=True)
-            avg_sel_boot, max_sel_boot = self.compute_selectivity_matrix(
-                boot_data, phecode_columns, active_features
-            )
-            bootstrap_avg.append(avg_sel_boot)
-            bootstrap_max.append(max_sel_boot)
-
-        bootstrap_avg = np.stack(bootstrap_avg, axis=0)  # shape: (n_bootstrap, n_phecodes, n_features)
-        bootstrap_max = np.stack(bootstrap_max, axis=0)
-
-        # 3) Compute p-values (fraction of bootstrap samples >= observed)
-        avg_p_values = np.mean(bootstrap_avg >= avg_sel_original[None, ...], axis=0)
-        max_p_values = np.mean(bootstrap_max >= max_sel_original[None, ...], axis=0)
-
-        # 4) Merge p-values with original selectivities and save
-        # Convert arrays to DataFrames
-        avg_sel_df = pd.DataFrame(avg_sel_original, index=phecode_columns, columns=active_features)
-        max_sel_df = pd.DataFrame(max_sel_original, index=phecode_columns, columns=active_features)
-        avg_pvals_df = pd.DataFrame(avg_p_values, index=phecode_columns, columns=active_features)
-        max_pvals_df = pd.DataFrame(max_p_values, index=phecode_columns, columns=active_features)
+        # Perform the selectivity analysis
+        effects, p_values = selectivity_analysis.perform_analysis()
 
         # Combine for average selectivity
-        def link_phewas(selectivities, pvalues):
-            df = avg_sel_df.stack().to_frame('Selectivity')
-            df['p_value'] = avg_pvals_df.stack()
+        def link_phewas(effects, pvalues):
+            df = effects.stack().to_frame('Effect')
+            df['p_value'] = pvalues.stack()
             df['-log10(p_value)'] = -np.log10(df['p_value'])
 
             df.reset_index(names=['Phecode', 'SAE Neuron'], inplace=True)
-            df.sort_values('Selectivity', ascending=False, inplace=True)
-            df['p_value_adjusted'] = multipletests(df['p_value'], method='fdr_bh')[1]
+            df.sort_values('Effect', ascending=False, inplace=True)
 
-            df['Phecode'] = df['Phecode'].astype(float).astype(str).str.strip()
+            # df['Phecode'] = df['Phecode'].astype(float).astype(str).str.strip()
             
             # Merge PheWAS mapping with most significant Phecodes to include their descriptions and concepts
-            significant_phecodes_df = pd.merge(
-                df,
-                phewas_mappings,
-                left_on='Phecode',
-                right_on='phecode',
-                how='left'
-            )
-            significant_phecodes_df = significant_phecodes_df.drop_duplicates(['Phecode', 'SAE Neuron', 'phenotype', 'category'])
-            return significant_phecodes_df
+            # significant_phecodes_df = pd.merge(
+            #     df,
+            #     phewas_mappings,
+            #     left_on='Phecode',
+            #     right_on='phecode',
+            #     how='left'
+            # )
+            # significant_phecodes_df = df.drop_duplicates(['Phecode', 'SAE Neuron', 'phenotype', 'category'])
+            return df
 
         def significant_selectivities(df):
             df = df.loc[df['p_value_adjusted'] < 0.1]
             # df = df.loc[df['Selectivity'] > 0.1]
             return df
 
-        combined_avg = link_phewas(avg_sel_df, avg_pvals_df)
+        combined_avg = link_phewas(effects, p_values)
         # combined_avg = significant_selectivities(combined_avg)
-        combined_avg.to_csv(os.path.join(self.output_dir, 'avg_selectivity_with_pvals.csv'), index=False)
+        combined_avg.to_csv(os.path.join(self.output_dir, 'effects_with_pvals.csv'), index=False)
 
         from util.manhattan_plot import plot_manhattan
         manhattan_dir = os.path.join(self.output_dir, 'manhattan')
         os.makedirs(manhattan_dir, exist_ok=True)
-        plot_manhattan(combined_avg, 'SAE Neuron', 'phenotype', 'Selectivity', area_col='-log10(p_value)')
-        plt.savefig(os.path.join(manhattan_dir, 'avg_selectivitiy.jpg'), dpi=300)
 
-        plot_manhattan(combined_avg, 'SAE Neuron', 'phenotype', '-log10(p_value)', area_col='-log10(p_value)')
-        plt.savefig(os.path.join(manhattan_dir, 'avg_selectivitiy_p_value.jpg'), dpi=300)
+        plot_manhattan(combined_avg, 'SAE Neuron', 'Phecode', 'Effect', area_col='-log10(p_value)')
+        plt.savefig(os.path.join(manhattan_dir, 'effects.jpg'), dpi=300)
 
-        combined_max = link_phewas(max_sel_df, max_pvals_df)
-        # combined_max = significant_selectivities(combined_max)
-        combined_max.to_csv(os.path.join(self.output_dir, 'max_selectivity_with_pvals.csv'), index=False)
-        plot_manhattan(combined_max, 'SAE Neuron', 'phenotype', 'Selectivity', area_col='-log10(p_value)')
-        plt.savefig(os.path.join(manhattan_dir, 'max_selectivitiy.jpg'), dpi=300)
+        significant_effects = combined_avg[combined_avg['p_value'] <= 0.05]
+        plot_manhattan(significant_effects, 'SAE Neuron', 'Phecode', 'Effect', area_col='-log10(p_value)')
+        plt.savefig(os.path.join(manhattan_dir, 'significant_effects_not_corrected.jpg'), dpi=300)
 
-        plot_manhattan(combined_max, 'SAE Neuron', 'phenotype', '-log10(p_value)', area_col='-log10(p_value)')
-        plt.savefig(os.path.join(manhattan_dir, 'max_selectivitiy_p_value.jpg'), dpi=300)
+        plot_manhattan(combined_avg, 'SAE Neuron', 'Phecode', '-log10(p_value)', area_col='-log10(p_value)')
+        num_tests = len(combined_avg)
+        bonferroni_threshold = -np.log10(0.05 / num_tests)
+        combined_avg['-log10(bonferri)'] = bonferroni_threshold
+        plt.axhline(y=bonferroni_threshold, color='red', linestyle='dashed', linewidth=1, label='Bonferroni Threshold')
+        plt.savefig(os.path.join(manhattan_dir, 'p_values.jpg'), dpi=300)
+
+        significant_rows = combined_avg[combined_avg['-log10(p_value)'] > bonferroni_threshold]
+        significant_rows.to_csv(os.path.join(self.output_dir, 'significant_concept_label_associations.csv'), index=False)
 
         x = 3
 
@@ -195,7 +144,7 @@ class SAEAnalysis:
             "test": torch.load(f"{vector_db_path}/test.pt"),
         }
 
-        checkpoint_path = self.config.task.sae_checkpoint
+        checkpoint_path = os.path.join(self.config.pretrained_model_dir, self.config.task.sae_checkpoint)
         sae = TrainSparseAutoencoder.load_from_checkpoint(
             checkpoint_path, strict=False
         ).sae
@@ -227,7 +176,36 @@ class SAEAnalysis:
             all_data.append(split_df)
 
         sae_output = pd.concat(all_data, ignore_index=True)
-        self.compute_statistics(sae_output)
+
+        # Load known-concept data
+        # label_path = '/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels.csv'
+        label_path = '/dataNAS/people/akkumar/contrastive-3d/data/merged_labels_diseases_filtered.csv'
+        raw_data = pd.read_csv(label_path)
+        # raw_data.columns = [str(float(col)) if i in range(1, 1693) else col for i, col in enumerate(raw_data.columns)]
+
+        phewas_mapping_file = os.path.join(self.config.base_dir, self.config.data.phewas_mapping)
+        phewas_mappings = pd.read_csv(phewas_mapping_file)
+
+        # Ensure consistent data types
+        phewas_mappings['phecode'] = phewas_mappings['phecode'].astype(float).astype(str).str.strip()
+
+        # disease_search_space = self.config.data.disease_search_space['merlin_diseases']
+        # existing_phewas_mappings = phewas_mappings.loc[phewas_mappings['phenotype'].isin(disease_search_space)]
+        # phecode_columns = existing_phewas_mappings['phecode']
+        existing_phewas_mappings = None
+        phecode_columns = raw_data.columns[5:]
+        raw_data = raw_data[['anon_accession'] + phecode_columns.tolist()]
+        raw_data = raw_data.replace(-1, np.nan)
+        
+        prevalence = raw_data[phecode_columns.tolist()].apply(pd.Series.value_counts)
+        print(prevalence)
+
+        # Merge
+        # assert set(sae_output['anon_accession']) == set(raw_data['anon_accession']), "Mismatch in anon_accession!"
+        sae_output = sae_output.merge(raw_data, on='anon_accession', how='inner')
+        sae_output.to_pickle(os.path.join(self.output_dir, 'sae_output-known_concepts.pkl'))
+
+        self.compute_statistics(sae_output, phecode_columns, existing_phewas_mappings)
 
         wandb.finish()
 

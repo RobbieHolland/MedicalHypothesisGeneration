@@ -1,9 +1,9 @@
 wandb_group: SAE_Analysis
-sae_checkpoint: /dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MultimodalMedicalHG/SAE/daily-rain-135/epoch=34-step=280.ckpt
+sae_checkpoint: MultimodalMedicalHG/SAE/serene-darkness-191/epoch=29-step=240.ckpt
 
 batch_size: 1000
 max_steps: 1000000
 
 output_dir: MedicalHypothesisGeneration/SparseAutoencoder/analysis
 
-n_bootstrap: 5
+n_bootstrap: 100

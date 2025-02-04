@@ -64,3 +64,5 @@ lightning_logs/
 *.csv
 slurm/
 *.ipynb
+*.nii
+*.pkl

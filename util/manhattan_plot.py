@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import textwrap
 
-def plot_manhattan(data, category_col, group_col, y_col, area_col=None, transform=None, figsize=(18, 12), point_size=10, wrap_width=35):
+def plot_manhattan(data, category_col, group_col, y_col, area_col=None, transform=None, figsize=(18, 12), point_size=50, wrap_width=35):
     plot_data = data.copy()
     plot_data['y_transformed'] = plot_data[y_col].apply(transform) if transform else plot_data[y_col]
     plot_data['category'] = plot_data[category_col].astype(str)

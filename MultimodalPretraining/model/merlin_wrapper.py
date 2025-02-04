@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.utils.checkpoint as checkpoint
 
 class MerlinWrapper(nn.Module):
     def __init__(self, config):
@@ -19,7 +20,10 @@ class MerlinWrapper(nn.Module):
 
     # def forward(self, x):
     #     return self.model.encode_image(x)
-    
+
+    def forward(self, x):
+        return self.model.encode_image.i3_resnet(x)[1]  # Normal inference
+
     def latent(self, x):
         feature_maps = []
 

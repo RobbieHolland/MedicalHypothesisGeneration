@@ -172,7 +172,14 @@ def fit_sae(config):
     trainer.fit(lightning_module, data_module)
 
     # Run test
-    trainer.test(lightning_module, datamodule=data_module)
+    # Path to the best model saved by ModelCheckpoint
+    best_model_path = trainer.checkpoint_callback.best_model_path
+
+    # Load the best model
+    best_model = TrainSparseAutoencoder.load_from_checkpoint(best_model_path)
+
+    # Test the best model
+    trainer.test(best_model, datamodule=data_module)
 
     wandb.finish()
 
