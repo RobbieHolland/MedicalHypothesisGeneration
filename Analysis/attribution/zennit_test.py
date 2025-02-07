@@ -2,7 +2,7 @@ import torch
 from torchvision.models import vgg16_bn
 import hydra
 import torch.utils.checkpoint
-from MultimodalPretraining.data.raw_database.dataset import create_dataloaders
+from Data.raw_database.abdominal_ct import create_dataloaders
 
 from zennit.composites import EpsilonGammaBox, EpsilonPlusFlat, EpsilonPlus
 from zennit.attribution import Gradient
@@ -21,7 +21,7 @@ def main(config):
     data = batch['image'][0].unsqueeze(0).to(torch.float32)
     data.requires_grad = True  # Ensure gradients are tracked
     
-    from MultimodalPretraining.model.model import load_model
+    from Model.model import load_model
 
     # Load model and set evaluation mode
     model = load_model(config)

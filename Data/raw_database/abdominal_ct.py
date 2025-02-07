@@ -1,16 +1,20 @@
-# DATASET_MAP = {
-#     "abdominal_ct": AbdominalCT,
-# }
-
-# def load_dataset(name, config):
-#     if name not in DATASET_MAP:
-#         raise ValueError(f"Dataset {name} is not supported.")
-#     return DATASET_MAP[name](config)
 from contrastive_3d.datasets import monai_datalists, monai_transforms, dataset_configs, dataloaders
 from contrastive_3d.datasets.dataloaders import CTPersistentDataset
 from monai.data import DataLoader
+import os
 
-def get_dataloaders(config, train_files=None, val_files=None, test_files=None, include=('train', 'validation', 'test')):
+class FilteredDataset(CTPersistentDataset):
+    def __init__(self, config, data, transform, cache_dir, label_names):
+        if label_names:
+            data = [{**row, **{k: v for k, v in zip(label_names, row['label'])}} for row in data]
+
+        filtered_data = data
+        if config.task.output_filter:
+            filtered_data = [item for item in data if item[config.task.outputs] in config.task.output_filter]
+
+        super().__init__(filtered_data, transform, cache_dir)
+
+def get_dataloaders(hydra_config, config, train_files=None, val_files=None, test_files=None, include=('train', 'validation', 'test'), output_filter=None):
     try:
         dataset_config = dataset_configs.get_dataset_config(config["dataset"])
         transforms = dataset_config.transforms
@@ -42,9 +46,10 @@ def get_dataloaders(config, train_files=None, val_files=None, test_files=None, i
     for key in include:
         if key in file_sources and key not in datasets:
             print(f"Creating {key} dataset...")
-            datasets[key] = CTPersistentDataset(data=file_sources[key], transform=transforms, cache_dir=cache_dir)
+            datasets[key] = FilteredDataset(hydra_config, data=file_sources[key], transform=transforms, cache_dir=cache_dir, label_names=dataset_config.label_names)
     
-    dataloaders = {key: DataLoader(datasets[key], batch_size=batch_sizes[key], shuffle=(key == 'train'), num_workers=0) for key in include if key in datasets}
+    num_workers = os.cpu_count()
+    dataloaders = {key: DataLoader(datasets[key], batch_size=batch_sizes[key], shuffle=(key == 'train'), num_workers=num_workers) for key in include if key in datasets}
     
     return dataloaders
 
@@ -62,7 +67,7 @@ def create_dataloaders(config, sets=['train', 'validation', 'test']):
     """
     from contrastive_3d.datasets import dataloaders
     dataset_config = {
-        "dataset": "stanford",
+        "dataset": config.data.merlin_dataset_variant,
         # "dataset": "stanford_disease_prediction_all",
         "fraction_train_data": config.data.fraction_train_data,
         "per_device_train_batch_size": config.task.batch_size,
@@ -70,7 +75,7 @@ def create_dataloaders(config, sets=['train', 'validation', 'test']):
         "per_device_test_batch_size": config.task.batch_size,
     }
 
-    dataloaders = get_dataloaders(dataset_config, include=sets)
+    dataloaders = get_dataloaders(config, dataset_config, include=sets, output_filter=config.task.output_filter)
 
     datasets_dict = {split: dl.dataset for split, dl in dataloaders.items()}
 

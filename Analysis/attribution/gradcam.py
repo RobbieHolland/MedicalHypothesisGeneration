@@ -3,7 +3,7 @@ import hydra
 import torch.utils.checkpoint
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
-from MultimodalPretraining.data.raw_database.dataset import create_dataloaders
+from Data.raw_database.abdominal_ct import create_dataloaders
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 import math
 

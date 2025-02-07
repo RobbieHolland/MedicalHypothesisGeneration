@@ -1,3 +1,5 @@
 vector_database_name: debug
 max_steps: 200
 batch_size: 20
+
+output_filter: Null

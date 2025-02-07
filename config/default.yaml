@@ -4,6 +4,7 @@ defaults:
   - multimodal_pretraining: default
   - sparse_autoencoder: basic
   - data: abdominal_ct
+  - model: merlin
   - task: build_vector_database
 
 wandb_api_token: ${paths.wandb_api_token}

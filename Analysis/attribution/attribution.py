@@ -3,7 +3,7 @@ import hydra
 import torch.utils.checkpoint
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
-from MultimodalPretraining.data.raw_database.dataset import create_dataloaders
+from Data.raw_database.abdominal_ct import create_dataloaders
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 # Override checkpoint function globally to disable it
@@ -45,14 +45,14 @@ def save_nifti(volume, output_path, affine=None):
 def main(config):
     import os
     model_path = config.task.sae_checkpoint
-    analysis_dir = os.path.join(config.base_dir, 'SparseAutoencoder/analysis/output', os.path.basename(os.path.dirname(model_path)), os.path.splitext(os.path.basename(model_path))[0])
+    analysis_dir = os.path.join(config.base_dir, 'Analysis/output', os.path.basename(os.path.dirname(model_path)), os.path.splitext(os.path.basename(model_path))[0])
     output_dir = os.path.join(analysis_dir, 'feature_attribution')
     
     # Load dataset
     datasets, dataloaders = create_dataloaders(config, sets=['validation'])
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    from MultimodalPretraining.model.model import load_model
+    from Model.model import load_model
 
     # Load model and set evaluation mode
     encoder = load_model(config)
@@ -60,13 +60,13 @@ def main(config):
 
     # Load SAE
     checkpoint_path = os.path.join(config.pretrained_model_dir, config.task.sae_checkpoint)
-    from SparseAutoencoder.run.fit_sae import TrainSparseAutoencoder, ActivationDataModule
+    from Analysis.run.fit_sae import TrainSparseAutoencoder, ActivationDataModule
     sae = TrainSparseAutoencoder.load_from_checkpoint(
             checkpoint_path, strict=False
     ).sae
 
     # Create combined model
-    from SparseAutoencoder.model.combined_model import CombinedModel
+    from Model.combined_model import CombinedModel
     model = CombinedModel(encoder, sae)
     model.eval()
     model = model.to(device)
@@ -101,7 +101,7 @@ def main(config):
             for i, data in enumerate(quantile_activating_sample_data):
                 data = data.unsqueeze(0).to(device)
 
-                from SparseAutoencoder.attribution.gradcam import gradcam
+                from Analysis.attribution.gradcam import gradcam
                 target_layers = [model.encoder.model.encode_image.i3_resnet.layer4[-1]]  # Adjust this based on your architecture
                 attribution_map = gradcam(model, data, association['Effect'], int(association['SAE Neuron'].replace('Concept ', '')), target_layers)
 

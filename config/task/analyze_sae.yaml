@@ -4,6 +4,8 @@ sae_checkpoint: MultimodalMedicalHG/SAE/serene-darkness-191/epoch=29-step=240.ck
 batch_size: 1000
 max_steps: 1000000
 
-output_dir: MedicalHypothesisGeneration/SparseAutoencoder/analysis
+output_dir: MedicalHypothesisGeneration/analysis
 
 n_bootstrap: 100
+
+output_filter: Null

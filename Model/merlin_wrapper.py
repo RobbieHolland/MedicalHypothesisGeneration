@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
+from Model.concept_model import ConceptModel
 
-class MerlinWrapper(nn.Module):
+class MerlinWrapper(ConceptModel):
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
         from contrastive_3d.models import clip_model_3d
         self.model = clip_model_3d.Clip3D(
             config={
@@ -25,6 +26,9 @@ class MerlinWrapper(nn.Module):
         return self.model.encode_image.i3_resnet(x)[1]  # Normal inference
 
     def latent(self, x):
+        if isinstance(x, dict):
+            x = x['image']
+            
         feature_maps = []
 
         def hook(module, _, output):

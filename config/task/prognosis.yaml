@@ -1,0 +1,12 @@
+wandb_group: LinearEvaluation
+
+outputs: ckd
+
+output_filter: [0, 1]
+
+batch_size: 8
+num_outs: 1
+
+lr: 1e-5
+gamma: 0.8
+max_steps: 1000

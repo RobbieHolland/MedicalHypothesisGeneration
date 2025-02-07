@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from SparseAutoencoder.run.fit_sae import TrainSparseAutoencoder, ActivationDataModule
+from Analysis.run.fit_sae import TrainSparseAutoencoder, ActivationDataModule
 import matplotlib.pyplot as plt
 from statsmodels.stats.multitest import multipletests
 
@@ -13,7 +13,7 @@ class SAEAnalysis:
     def __init__(self, config):
         self.config = config
         self.model_path = self.config.task.sae_checkpoint
-        self.output_dir = os.path.join(config.base_dir, 'SparseAutoencoder/analysis/output', os.path.basename(os.path.dirname(self.model_path)), os.path.splitext(os.path.basename(self.model_path))[0])
+        self.output_dir = os.path.join(config.base_dir, 'Analysis/output', os.path.basename(os.path.dirname(self.model_path)), os.path.splitext(os.path.basename(self.model_path))[0])
         os.makedirs(self.output_dir, exist_ok=True)
 
     def plot_selectivity_matrix(self, selectivity_matrix):
@@ -62,7 +62,7 @@ class SAEAnalysis:
         active_features = [col for col in feature_columns if sae_output[col].var() > 0]
 
         ### Calculate relationships and p-values
-        from SparseAutoencoder.statistics.logistic_regression import LogisticRegressionAnalysis
+        from Analysis.statistics.logistic_regression import LogisticRegressionAnalysis
         selectivity_analysis = LogisticRegressionAnalysis(
             sae_output=sae_output,
             phecode_columns=phecode_columns,
@@ -156,7 +156,7 @@ class SAEAnalysis:
             'test': activation_data_module.test_dataloader(),
         }
 
-        from MultimodalPretraining.util.extract_model_output import extract_vectors_for_split
+        from Pretraining.util.extract_model_output import extract_vectors_for_split
         input_field = 0
         fields = [1]
 

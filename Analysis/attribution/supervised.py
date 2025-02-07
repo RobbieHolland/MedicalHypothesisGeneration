@@ -1,13 +1,14 @@
 import torch
 import hydra
 import torch.utils.checkpoint
-from MultimodalPretraining.data.raw_database.dataset import create_dataloaders
+from Data.raw_database.abdominal_ct import create_dataloaders
 import torch
 import nibabel as nib
 import numpy as np
 import os
 import pandas as pd
 from functools import partial
+from model.get_model import get_model
 
 # Override checkpoint function globally to disable it
 torch.utils.checkpoint.checkpoint = lambda func, *args, **kwargs: func(*args, **kwargs)
@@ -16,7 +17,7 @@ class FeatureAttribution:
     def __init__(self, config):
         self.config = config
         self.model_path = config.task.sae_checkpoint
-        self.analysis_dir = os.path.join(config.base_dir, 'SparseAutoencoder/analysis/output', os.path.basename(os.path.dirname(self.model_path)), os.path.splitext(os.path.basename(self.model_path))[0])
+        self.analysis_dir = os.path.join(config.base_dir, 'Analysis/output', os.path.basename(os.path.dirname(self.model_path)), os.path.splitext(os.path.basename(self.model_path))[0])
         self.output_dir = os.path.join(self.analysis_dir, 'feature_attribution')
     
         # Load dataset
@@ -28,22 +29,7 @@ class FeatureAttribution:
         self.device = torch.device('cpu')
 
         # Load model and set evaluation mode
-        from MultimodalPretraining.model.model import load_model
-        encoder = load_model(config)
-        encoder.eval()  # Ensures proper BatchNorm and Dropout behavior
-
-        # Load SAE
-        checkpoint_path = os.path.join(config.pretrained_model_dir, config.task.sae_checkpoint)
-        from SparseAutoencoder.run.fit_sae import TrainSparseAutoencoder, ActivationDataModule
-        sae = TrainSparseAutoencoder.load_from_checkpoint(
-                checkpoint_path, strict=False
-        ).sae
-
-        # Create combined model
-        from SparseAutoencoder.model.combined_model import CombinedModel
-        self.model = CombinedModel(encoder, sae)
-        self.model = self.model.eval()
-        self.model = self.model.to(self.device)
+        self.model = get_model(config, self.device)
 
     def apply_threshold_mask(self, image_volume, cam_volume, threshold=0.8):
         image_volume = image_volume.squeeze()
@@ -77,7 +63,6 @@ class FeatureAttribution:
         nib.save(nib.Nifti1Image(volume, affine), output_path)
 
     def supervised_clip_attribution(self):
-        # phecode = 'splenomegaly'
         phecodes = [
             'splenomegaly',
             'appendicitis',
@@ -111,7 +96,7 @@ class FeatureAttribution:
                     effect = 2 * (label - 0.5) # +1 for true, -1 for false
                     target = label
 
-                    from SparseAutoencoder.attribution.gradcam import gradcam
+                    from Analysis.attribution.gradcam import gradcam
                     target_layers = [self.model.encoder.model.encode_image.i3_resnet.layer4[-1]]  # Adjust this based on your architecture
                     attribution_map = gradcam(self.model, data, effect, target, target_layers)
 
@@ -147,7 +132,7 @@ class FeatureAttribution:
                 effect = 2 * (label - 0.5) # +1 for true, -1 for false
                 target = raw_data.columns[1:1693].get_loc(phecode)
 
-                from SparseAutoencoder.attribution.gradcam import gradcam
+                from Analysis.attribution.gradcam import gradcam
                 target_layers = [self.model.encoder.model.encode_image.i3_resnet.layer4[-1]]  # Adjust this based on your architecture
                 attribution_map = gradcam(self.model, data, effect, target, target_layers)
 
@@ -188,7 +173,7 @@ class FeatureAttribution:
                 for i, data in enumerate(quantile_activating_sample_data):
                     data = data.unsqueeze(0).to(self.device)
 
-                    from SparseAutoencoder.attribution.gradcam import gradcam
+                    from Analysis.attribution.gradcam import gradcam
                     target_layers = [self.model.encoder.model.encode_image.i3_resnet.layer4[-1]]  # Adjust this based on your architecture
                     attribution_map = gradcam(self.model, data, association['Effect'], int(association['SAE Neuron'].replace('Concept ', '')), target_layers)
 
