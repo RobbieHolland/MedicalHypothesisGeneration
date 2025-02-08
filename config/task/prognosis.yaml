@@ -1,12 +1,20 @@
 wandb_group: LinearEvaluation
 
-outputs: ckd
+outputs: ['ckd']
+# outputs: ['ost']
+# outputs: ['htn']
+# outputs: ['ckd', 'ost', 'htn', 'ihd', 'dm', 'cvd']
 
 output_filter: [0, 1]
 
-batch_size: 8
+batch_size: 256
 num_outs: 1
 
-lr: 1e-5
+# lr: 3e-5
+lr: 3e-3
 gamma: 0.8
-max_steps: 1000
+max_steps: 3000
+# max_steps: 200
+
+check_val_every_n_epochs: 8
+validation_interval: 80

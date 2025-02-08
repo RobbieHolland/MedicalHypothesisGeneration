@@ -4,10 +4,10 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torchmetrics import MeanMetric, AUROC
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import ExponentialLR
 import hydra
 from Model.trainable_save import TrainableSave
 import wandb
+import os
 
 class LinearEvaluation(TrainableSave):
     """Multi-label (multi-head) linear evaluation with BCE loss and exponential LR decay."""
@@ -34,31 +34,31 @@ class LinearEvaluation(TrainableSave):
 
     def forward(self, x):
         with torch.no_grad():
-            feats = self.model.latent(x)
-        return self.classifier(feats)
+            z = self.model.latent(x).to(torch.float16)
+        return self.classifier(z)
     
     def _shared_step(self, batch, phase):
-        x = {k: batch[k].as_tensor() if hasattr(batch[k], "as_tensor") else batch[k] for k in self.config.data.inputs}
-        y = batch[self.config.task.outputs]
+        x = batch[0]
+        y = batch[1]
 
-        # Ensure y is a standard PyTorch tensor
+        y = y.squeeze(1)
         if hasattr(y, "as_tensor"):
             y = y.as_tensor()
         
         y = y.to(torch.long)  # `one_hot` requires integer indices
-
-        # Convert y to one-hot encoding with 2 classes (batch_size, 2)
         y = F.one_hot(y, num_classes=2).float()
 
         logits = self.forward(x)
-        loss = self.criterion(logits, y)  # Now y and logits have the same shape
+        loss = self.criterion(logits, y)
 
         with torch.inference_mode():
-            self.loss_metrics[phase].update(torch.tensor(loss.item(), device='cpu'))
+            self.loss_metrics[phase].update(loss.cpu())
+            self.auc_metrics[phase].update(torch.sigmoid(logits.detach().cpu()), y.cpu().int())
 
-        # self.auc_metrics[phase].update(torch.sigmoid(logits.detach().cpu()), y.cpu().int())
-
+        # Log loss per step
+        self.log(f"{phase}_loss_step", loss, prog_bar=True, logger=True)  
         wandb.log({f"{phase}_loss_step": loss.item()}, step=self.global_step)
+        
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -66,6 +66,7 @@ class LinearEvaluation(TrainableSave):
 
     def validation_step(self, batch, batch_idx):
         return self._shared_step(batch, "validation")
+        # self.log(f"validation_auc_epoch", auc_val, prog_bar=True, logger=True)
 
     def test_step(self, batch, batch_idx):
         return self._shared_step(batch, "test")
@@ -81,15 +82,23 @@ class LinearEvaluation(TrainableSave):
 
     def _epoch_metrics(self, phase):
         epoch_loss = self.loss_metrics[phase].compute()
-        # auc_val = self.auc_metrics[phase].compute()
+        auc_val = self.auc_metrics[phase].compute()
+
+        # Use self.log() for ModelCheckpoint compatibility
+        self.log(f"{phase}_loss_epoch", epoch_loss, prog_bar=True, logger=True)
+        self.log(f"{phase}_auc_epoch", auc_val, prog_bar=True, logger=True)
+
+        # Keep wandb logging
         wandb.log({f"{phase}_loss_epoch": epoch_loss.item()}, step=self.global_step)
-        # wandb.log(f"{phase}_auc_epoch", auc_val, prog_bar=True)
+        wandb.log({f"{phase}_auc_epoch": auc_val.item()}, step=self.global_step)
+
         self.loss_metrics[phase].reset()
-        # self.auc_metrics[phase].reset()
+        self.auc_metrics[phase].reset()
+
+        return auc_val
 
     def configure_optimizers(self):
         optimizer = AdamW(self.classifier.parameters(), lr=self.config.task.lr)
-        # scheduler = ExponentialLR(optimizer, gamma=self.config.task.gamma)
         return optimizer
 
 @hydra.main(config_path="../../config", config_name="default", version_base=None)
@@ -99,26 +108,39 @@ def run(config):
     init_wandb(config)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    # Load model to evaluate
-    from Model.get_model import get_model
-    model = get_model(config, device)
-
     # Load dataloaders
     from Data.get_data import get_data
     datasets, dataloaders = get_data(config)
     
+    # Load model to evaluate
+    from Model.get_model import get_model
+    model = get_model(config, device)
+
     linear_eval = LinearEvaluation(config, model)
 
+    from util.lightning import validation_check_intervals
+    val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(dataloaders['train']))
+
+    save_path = os.path.join(config.pretrained_model_dir, wandb.run.project, wandb.run.group, wandb.run.name)
     trainer = Trainer(
         max_steps=config.task.max_steps,
+        val_check_interval=val_check_interval,
+        check_val_every_n_epoch=check_val_every_n_epoch,
         accelerator="gpu",
         devices=1,
         precision=16,
+        callbacks=[pl.callbacks.ModelCheckpoint(dirpath=save_path, save_top_k=1, mode='max', monitor="validation_auc_epoch")],
     )
     trainer.validate(linear_eval, dataloaders['validation'])
     trainer.fit(linear_eval, dataloaders['train'], dataloaders['validation'])
 
-    trainer.test(linear_eval, dataloaders['test'])
+    best_model_path = trainer.checkpoint_callback.best_model_path
+
+    # Load the best model
+    print(f'Testing {best_model_path}')
+    best_model = LinearEvaluation.load_from_checkpoint(best_model_path)
+
+    trainer.test(best_model, dataloaders['test'])
 
     wandb.finish()
 

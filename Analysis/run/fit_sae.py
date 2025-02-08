@@ -122,12 +122,8 @@ def fit_sae(config):
     lightning_module = TrainSparseAutoencoder(config=config)
     data_module = ActivationDataModule(config, datasets)
 
-    check_val_every_n_epoch = None
-    val_check_interval = None
-    if config.task.validation_interval > len(data_module.train_dataloader()):
-        check_val_every_n_epoch = config.task.check_val_every_n_epochs
-    else:
-        val_check_interval = config.task.validation_interval
+    from util.lightning import validation_check_intervals
+    val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(data_module.train_dataloader()))
 
     save_path = os.path.join(config.pretrained_model_dir, wandb.run.project, 'SAE', wandb.run.name)
     trainer = pl.Trainer(

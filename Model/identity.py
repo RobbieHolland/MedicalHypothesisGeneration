@@ -9,7 +9,8 @@ class IdentityModel(ConceptModel):
         self.config = config
 
     def forward(self, x):
-        return x  # Normal inference
+        z = torch.stack([x[l] for l in self.config.data.inputs], axis=1)
+        return z
 
     def latent(self, x):
         return x
