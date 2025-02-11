@@ -9,9 +9,10 @@ class IdentityModel(ConceptModel):
         self.config = config
 
     def forward(self, x):
-        z = torch.stack([x[l] for l in self.config.data.inputs], axis=1)
+        z = [l.unsqueeze(1) if l.ndim == 1 else l for l in x]
+        z = torch.cat(z, axis=1)
         return z
-
+    
     def latent(self, x):
-        return x
+        return self(x)
 

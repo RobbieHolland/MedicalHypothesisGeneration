@@ -23,7 +23,7 @@ class LinearEvaluation(TrainableSave):
 
         # Ensure at least 2 heads, even for binary classification
         self.num_heads = max(config.task.num_outs, 2)
-        self.classifier = nn.Linear(config.model.latent_dim, self.num_heads)
+        self.classifier = nn.Linear(config.data.latent_dim, self.num_heads)
         self.criterion = nn.BCEWithLogitsLoss()
 
         # Metrics
@@ -38,10 +38,9 @@ class LinearEvaluation(TrainableSave):
         return self.classifier(z)
     
     def _shared_step(self, batch, phase):
-        x = batch[0]
-        y = batch[1]
+        x = [torch.stack([torch.as_tensor(arr).to(self.model.device) for arr in input_fields]) for input_fields in batch[0]]
+        y = torch.Tensor(batch[1]).squeeze(0).to(self.model.device)
 
-        y = y.squeeze(1)
         if hasattr(y, "as_tensor"):
             y = y.as_tensor()
         
@@ -56,7 +55,7 @@ class LinearEvaluation(TrainableSave):
             self.auc_metrics[phase].update(torch.sigmoid(logits.detach().cpu()), y.cpu().int())
 
         # Log loss per step
-        self.log(f"{phase}_loss_step", loss, prog_bar=True, logger=True)  
+        self.log(f"{phase}_loss_step", loss, prog_bar=True, logger=True, batch_size=y.shape[0])
         wandb.log({f"{phase}_loss_step": loss.item()}, step=self.global_step)
         
         return loss
@@ -114,7 +113,7 @@ def run(config):
     
     # Load model to evaluate
     from Model.get_model import get_model
-    model = get_model(config, device)
+    model = get_model(config, device=device)
 
     linear_eval = LinearEvaluation(config, model)
 

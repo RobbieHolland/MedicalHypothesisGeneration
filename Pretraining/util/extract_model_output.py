@@ -15,9 +15,9 @@ class EmbeddingExtractor(LightningModule):
 
     def test_step(self, batch, batch_idx):
         # Process the batch
-        images = batch[self.input_field]
-        batch_fields = {field: batch[field] for field in self.fields}
-        batch_output = self.forward(images)  # Extract embeddings
+        inputs = batch[0][self.input_field]
+        batch_fields = {field: batch[1][field] for field in self.fields}
+        batch_output = self.forward(inputs)  # Extract embeddings
         return {"output": batch_output.detach().cpu(), **batch_fields}
 
 class EmbeddingExtractionCallback(Callback):

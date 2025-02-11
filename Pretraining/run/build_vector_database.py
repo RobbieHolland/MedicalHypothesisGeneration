@@ -22,7 +22,7 @@ def build_vector_database(config):
         all_fields = extract_vectors_for_split(config, dataloaders[split], model, input_field, fields)
 
     # Save the results to a file
-    output_dir = os.path.join(config.base_dir, config.data.vector_database_out, config.task.vector_database_name)
+    output_dir = os.path.join(config.base_dir, config.data.vector_database_out, config.data.vector_database_name)
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{split}.pt")
     torch.save(all_fields, output_path)

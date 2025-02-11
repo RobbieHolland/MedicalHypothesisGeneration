@@ -1,5 +1,0 @@
-defaults:
-  - _self_
-
-name: identity
-latent_dim: 2048

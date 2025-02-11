@@ -2,8 +2,8 @@ import os
 from Model.model import load_model
 from Model.identity import IdentityModel
 
-def get_model(config, device=None):
-    model_name = config.model.name
+def get_model(config, specific_model_name=None, device=None):
+    model_name = config.model_name if not specific_model_name else specific_model_name
 
     if model_name == 'merlin':
         model = load_model(config)
@@ -11,6 +11,9 @@ def get_model(config, device=None):
         model = _load_merlin_sae(config)
     elif model_name == 'identity':
         return IdentityModel(config)
+    elif model_name == 'merlin_ct_text':
+        model = load_model(config)
+        model.latent = lambda x: model.multimodal_forward(x)
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 

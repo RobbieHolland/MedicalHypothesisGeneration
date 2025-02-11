@@ -29,7 +29,7 @@ class FeatureAttribution:
         self.device = torch.device('cpu')
 
         # Load model and set evaluation mode
-        self.model = get_model(config, self.device)
+        self.model = get_model(config, device=self.device)
 
     def apply_threshold_mask(self, image_volume, cam_volume, threshold=0.8):
         image_volume = image_volume.squeeze()
