@@ -1,4 +1,10 @@
 import torch
+import hydra
+from Model.get_model import get_model
+from Data.get_data import get_data
+from Analysis.run.linear_evaluation import LinearEvaluation
+from types import MethodType
+from torch.cuda.amp import autocast
 
 class IntegratedGradients:
     def __init__(self, model, baseline=None, steps=50, device=None):
@@ -47,20 +53,54 @@ class IntegratedGradients:
         attributions = (x - self.baseline) * avg_grads if self.baseline is not None else x * avg_grads
         return attributions
 
+@hydra.main(config_path="../../config", config_name="default", version_base=None)
+def main(config):
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cpu')
+    model = get_model(config)
+
+    datasets, dataloaders = get_data(config, specific_data='abdominal_ct', splits=['validation'])
+
+    sample = datasets['validation'].__getitem__(0)
+    x = (sample['image'].unsqueeze(0).to(device), [sample['findings']])
+    model = get_model(config)
+    model = model.eval()
+    model = model.to(device)
+
+    with autocast(dtype=torch.float16):
+        linear_model_path = '/dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MedicalHypothesisGeneration-Analysis_run/LinearEvaluation/mu057prc/abdominal_ct_text_embeddings/ihd/clean-sweep-4/epoch=223-step=4704.ckpt'
+        linear_model = LinearEvaluation.load_from_checkpoint(linear_model_path)
+        linear_model = linear_model.to(device)
+
+        def full_forward(self, x):
+            z = self.multimodal_forward(x)
+            y = linear_model(z.squeeze(1).unsqueeze(0))
+            return y
+
+        model.forward = MethodType(full_forward, model)
+
+        y = model.forward(x)
+
+        # Define the attribution method
+        from captum.attr import InputXGradient
+
+        input_x_gradient = InputXGradient(model)
+
+        # Target class index
+        target_class = torch.tensor([0])
+
+        # Compute attributions
+        attributions = input_x_gradient.attribute(x, target_class)
+
+        # Detach to avoid computation graph issues
+        attributions = attributions.detach()
+
+        # # Initialize IG and compute attributions for output neuron 0
+        # ig = IntegratedGradients(model, steps=100)
+        # attributions = ig.explain(x, output_index=0)
+
+        # print("Attributions:", attributions)
+
 # Example Usage:
 if __name__ == "__main__":
-    # Sample model
-    model = torch.nn.Sequential(
-        torch.nn.Linear(10, 5),  # Input: 10, Output: 5
-        torch.nn.ReLU(),
-        torch.nn.Linear(5, 1)  # Output: 1 neuron
-    )
-
-    # Random input
-    x = torch.rand((1, 10))  # Single batch, 10 features
-
-    # Initialize IG and compute attributions for output neuron 0
-    ig = IntegratedGradients(model, steps=100)
-    attributions = ig.explain(x, output_index=0)
-
-    print("Attributions:", attributions)
+    main()

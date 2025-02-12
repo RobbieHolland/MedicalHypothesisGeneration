@@ -1,4 +1,4 @@
-from Data.raw_database.abdominal_ct import create_dataloaders
+from Data.raw_database.abdominal_ct import create_dataloaders, MultimodalCTDataset
 import os
 import torch
 from torch.utils.data import TensorDataset, Dataset, DataLoader
@@ -48,10 +48,7 @@ class ActivationDataModule(pl.LightningDataModule):
 
 import numpy as np
 
-
-def load_merlin_embeddings_and_labels(config, model_field_pairs=[]):
-    # Usage:
-    vector_db_path = os.path.join(config.base_dir, config.data.vector_database_in)
+def load_abdominal_ct_labels(config):
     labels_path = config.paths.five_year_prognosis_labels
     labels_df = pd.read_csv(labels_path).set_index("anon_accession")
     labels_df = labels_df.drop_duplicates()
@@ -60,6 +57,13 @@ def load_merlin_embeddings_and_labels(config, model_field_pairs=[]):
 
     phecode_findings_metadata = pd.read_csv(config.paths.abdominal_phecode_labels)
     labels_df = labels_df.merge(phecode_findings_metadata, on='anon_accession', how='left')
+
+    return labels_df
+
+def load_merlin_embeddings_and_labels(config, model_field_pairs=[]):
+    # Usage:
+    vector_db_path = os.path.join(config.base_dir, config.data.vector_database_in)
+    labels_df = load_abdominal_ct_labels(config)
 
     datasets = {}
     for split in ["train", "validation", "test"]:
@@ -78,13 +82,34 @@ def load_merlin_embeddings_and_labels(config, model_field_pairs=[]):
     return datasets
 
 
-def get_data(config, device=None):
-    data_name = config.data.name
+def get_data(config, specific_data=None, splits=['train', 'validation', 'test']):
+    data_type = config.data.type if not specific_data else specific_data
 
-    if data_name == 'abdominal_ct':
-        datasets, dataloaders = create_dataloaders(config)
+    if data_type == 'abdominal_ct':
+        labels_df = load_abdominal_ct_labels(config)
 
-    elif data_name in 'abdominal_ct_embeddings':
+        from contrastive_3d.datasets import dataloaders
+        from Data.raw_database.abdominal_ct import get_dataloaders
+        dataset_config = {
+            "dataset": config.data.merlin_dataset_variant,
+            # "dataset": "stanford_disease_prediction_all",
+            "fraction_train_data": config.data.fraction_train_data,
+            "per_device_train_batch_size": config.task.batch_size,
+            "per_device_val_batch_size": config.task.batch_size,
+            "per_device_test_batch_size": config.task.batch_size,
+        }
+
+        # Louis' API
+        raw_dl = get_dataloaders(config, dataset_config, include=splits, output_filter=config.task.output_filter)
+
+        datasets, dataloaders = {}, {}
+        for split in splits:
+            datasets[split] = MultimodalCTDataset(config, raw_dl[split].dataset, labels_df)
+            dataloaders[split] = DataLoader(datasets[split], batch_size=raw_dl[split].batch_size, shuffle=raw_dl[split].sampler is not None, num_workers=raw_dl[split].num_workers, pin_memory=raw_dl[split].pin_memory)
+            
+        x = 3
+
+    elif data_type in 'abdominal_ct_embeddings':
         datasets = load_merlin_embeddings_and_labels(config)
 
         activation_data_module = EmbeddingDataModule(config, datasets)
@@ -94,11 +119,11 @@ def get_data(config, device=None):
             'test': activation_data_module.test_dataloader(),
         }
 
-    elif data_name == 'abdominal_ct_text_embeddings':
+    elif data_type == 'abdominal_ct_text_embeddings':
         config = config.copy()
 
         from Model.get_model import get_model
-        config.model_name = 'merlin_ct_text'
+        config.model_name = 'merlin'
 
         model = get_model(config)
         model.latent = lambda x: model.model.encode_text(x)
@@ -115,7 +140,7 @@ def get_data(config, device=None):
         }
         x = 3
 
-    elif data_name == 'phecodes':
+    elif data_type == 'phecodes':
         labels_df = pd.read_csv(config.paths.abdominal_phecode_labels)
         prognosis_labels_df = pd.read_csv(config.paths.five_year_prognosis_labels).set_index("anon_accession")
         vector_db_path = os.path.join(config.base_dir, config.data.vector_database_in)
@@ -143,6 +168,6 @@ def get_data(config, device=None):
         }
 
     else:
-        raise ValueError(f"Unknown data name: {data_name}")
+        raise ValueError(f"Unknown data name: {data_type}")
 
     return datasets, dataloaders

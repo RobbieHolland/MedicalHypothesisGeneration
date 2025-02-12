@@ -25,13 +25,11 @@ class MerlinWrapper(ConceptModel):
     def forward(self, x):
         return self.model.encode_image.i3_resnet(x)[1]  # Normal inference
 
-
     def multimodal_forward(self, x):
-        z_image, z_text = x
+        image, text = x
 
-        # z_image = self.model.encode_image(image)[0]
-        # z_text = self.model.encode_text(text)
-
+        z_text = self.model.encode_text(text)
+        z_image = self.latent(image)
 
         z = torch.cat((z_image, z_text), dim=1)
         return z
@@ -49,7 +47,7 @@ class MerlinWrapper(ConceptModel):
         hook_handle = self.model.encode_image.i3_resnet.avgpool.register_forward_hook(hook)
 
         # Forward pass through the model
-        # output = self.model.encode_image(x)
+        output = self.model.encode_image(x)
         
         # Remove the hook after the forward pass to avoid redundancy
         hook_handle.remove()

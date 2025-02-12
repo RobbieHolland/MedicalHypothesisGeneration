@@ -120,7 +120,8 @@ def run(config):
     from util.lightning import validation_check_intervals
     val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(dataloaders['train']))
 
-    save_path = os.path.join(config.pretrained_model_dir, wandb.run.project, wandb.run.group, wandb.run.name)
+    sweep_id = wandb.run.sweep_id if wandb.run.sweep_id else 'no_sweep'
+    save_path = os.path.join(config.pretrained_model_dir, wandb.run.project, wandb.run.group, sweep_id, config.data.name, config.task.outputs[0], wandb.run.name)
     trainer = Trainer(
         max_steps=config.task.max_steps,
         val_check_interval=val_check_interval,
