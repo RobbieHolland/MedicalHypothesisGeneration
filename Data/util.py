@@ -7,33 +7,33 @@ from Pretraining.util.extract_model_output import extract_vectors_for_split
 import pytorch_lightning as pl
 
 class EmbeddingDataset(pl.LightningDataModule):
-    def __init__(self, config, dataset):
+    def __init__(self, config, dataset, autofilter=True):
         super().__init__()
         self.config = config
 
-        # Apply filtering if needed
-        if config.task.output_filter:
-            inclusion_mask = dataset[config.task.outputs].isin(config.task.output_filter).all(axis=1)
-            dataset = dataset.loc[inclusion_mask]
-            dataset = dataset.reset_index(drop=True)
-
-        self.dataset = dataset
+        self.original_dataset = dataset
+        self.dataset = self.original_dataset.copy()
 
         # Convert to numpy arrays for efficient access
         self.input_keys = config.data.inputs
         self.output_keys = config.task.outputs
 
-        # self._wrap_non_numeric_inputs()
+        if autofilter:
+            self.filter()
 
-        self.input_data = dataset[self.input_keys].to_numpy()
-        self.output_data = dataset[self.output_keys].to_numpy()
-        
-    def _wrap_non_numeric_inputs(self):
-        """Ensure non-numeric columns are wrapped as single-item lists."""
-        for col in self.input_keys:
-            if self.dataset[col].dtype == object:  # Likely text or categorical
-                print(f"Wrapping non-numeric column '{col}' for DataLoader compatibility.")
-                self.dataset[col] = self.dataset[col].astype(str).apply(lambda x: [x])  # Wrap in a list
+        self.set_inputs_outputs()
+
+    def set_inputs_outputs(self):
+        self.input_data = self.dataset[self.input_keys].to_numpy()
+        self.output_data = self.dataset[self.output_keys].to_numpy()
+
+    def filter(self):
+        if self.config.task.output_filter:
+            inclusion_mask = self.dataset[self.config.task.outputs].isin(self.config.task.output_filter).all(axis=1)
+            self.dataset = self.dataset.loc[inclusion_mask]
+            self.dataset = self.dataset.reset_index(drop=True)
+
+        self.set_inputs_outputs()
 
     def __len__(self):
         return len(self.input_data)
@@ -82,7 +82,7 @@ class CompressedEmbeddingDataset(EmbeddingDataset):
             split: Dataset split name (e.g., 'train', 'validation', 'test').
             batch_size: Batch size for DataLoader.
         """
-        super().__init__(config, dataset)
+        super().__init__(config, dataset, autofilter=False)
         
         self.split = split
         self.batch_size = batch_size
@@ -98,9 +98,7 @@ class CompressedEmbeddingDataset(EmbeddingDataset):
         # Load or compute compressed embeddings
         self._apply_cached_compression(config, model_field_pairs)
 
-        # Convert updated dataset to numpy arrays
-        self.input_data = self.dataset[self.input_keys].to_numpy()
-        self.output_data = self.dataset[self.output_keys].to_numpy()
+        self.filter()
 
     def _get_cache_path(self, config, compressed_field_name):
         """Generates the cache path for the stored embeddings."""
