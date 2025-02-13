@@ -6,7 +6,7 @@ from Model.concept_model import ConceptModel
 class MerlinWrapper(ConceptModel):
     def __init__(self, config):
         super().__init__(config)
-        from contrastive_3d.models import clip_model_3d
+        from Model import clip_model_3d
         self.model = clip_model_3d.Clip3D(
             config={
                 "architecture": "i3_resnet_clinical_longformer",

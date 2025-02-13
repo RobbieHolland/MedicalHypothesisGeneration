@@ -6,6 +6,45 @@ import os
 from Model.sparse_autoencoder import SparseAutoencoder
 from Data.get_data import ActivationDataModule
 
+# class ActivationsDataset(Dataset):
+#     def __init__(self, config, data):
+#         self.config = config
+
+#         self.vectors = data['vectors'].clone() if isinstance(data['vectors'], torch.Tensor) else torch.tensor(data['vectors'])
+#         self.outputs = pd.DataFrame(data[config.task.outputs])
+
+#         if config.task.output_filter:
+#             mask = self.outputs.isin(config.task.output_filter).all(axis=1)
+#             self.outputs = self.outputs[mask]
+#             self.vectors = self.vectors[mask.values]
+
+#     def __len__(self):
+#         return len(self.outputs)
+
+#     def __getitem__(self, idx):
+#         return self.vectors[idx], self.data[self.config.output_fields][idx]
+
+# class ActivationDataModule(pl.LightningDataModule):
+#     def __init__(self, config, activations, output_fields='sample_ids'):
+#         super().__init__()
+#         self.config = config
+#         self.activations = activations
+#         self.output_fields = output_fields
+
+#     def _create_dataloader(self, dataset_data):
+#         dataset = ActivationsDataset(self.config, dataset_data, self.output_fields)
+#         return DataLoader(dataset, batch_size=self.config.task.batch_size, shuffle=True)
+
+#     def train_dataloader(self):
+#         return self._create_dataloader(self.activations['train'])
+
+#     def val_dataloader(self):
+#         return self._create_dataloader(self.activations['validation'])
+
+#     def test_dataloader(self):
+#         return self._create_dataloader(self.activations['test'])
+
+
 class TrainSparseAutoencoder(pl.LightningModule):
     def __init__(self, config=None):
         super().__init__()

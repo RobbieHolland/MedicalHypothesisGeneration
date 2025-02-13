@@ -56,33 +56,33 @@ class IntegratedGradients:
 @hydra.main(config_path="../../config", config_name="default", version_base=None)
 def main(config):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    # device = torch.device('cpu')
-    model = get_model(config)
 
-    datasets, dataloaders = get_data(config, specific_data='abdominal_ct', splits=['validation'])
+    datasets, dataloaders = get_data(config, splits=['validation'])
 
-    sample = datasets['validation'].__getitem__(0)
-    x = (sample['image'].unsqueeze(0).to(device), [sample['findings']])
+    inputs, outputs = datasets['validation'].__getitem__(0)
+
+    compression_model = get_model(config, specific_model_name='merlin')
+    tokenizer = compression_model.model.encode_text.tokenizer
+    
     model = get_model(config)
+    model.inference_map = datasets['validation'].inference_map
     model = model.eval()
     model = model.to(device)
 
+    import numpy as np
+    inputs['image'] = torch.Tensor(inputs['image']).to(device)
+    inputs['findings'] = tokenizer(inputs['findings'].lower(), return_tensors="pt", padding=True, truncation=True)["input_ids"]
+
     with autocast(dtype=torch.float16):
-        linear_model_path = '/dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MedicalHypothesisGeneration-Analysis_run/LinearEvaluation/mu057prc/abdominal_ct_text_embeddings/ihd/clean-sweep-4/epoch=223-step=4704.ckpt'
-        linear_model = LinearEvaluation.load_from_checkpoint(linear_model_path)
-        linear_model = linear_model.to(device)
-
-        def full_forward(self, x):
-            z = self.multimodal_forward(x)
-            y = linear_model(z.squeeze(1).unsqueeze(0))
-            return y
-
-        model.forward = MethodType(full_forward, model)
-
-        y = model.forward(x)
+        outputs = model.forward(inputs)
+        y = outputs['ost_prediction']
 
         # Define the attribution method
         from captum.attr import InputXGradient
+
+        def forward_func(image_tensor, tokenized_text):
+            inputs_dict = {"image": image_tensor, "findings": tokenized_text}  # Reconstruct dict
+            return model(inputs_dict)  # Pass to model
 
         input_x_gradient = InputXGradient(model)
 
@@ -90,7 +90,7 @@ def main(config):
         target_class = torch.tensor([0])
 
         # Compute attributions
-        attributions = input_x_gradient.attribute(x, target_class)
+        attributions = input_x_gradient.attribute(inputs, target_class)
 
         # Detach to avoid computation graph issues
         attributions = attributions.detach()

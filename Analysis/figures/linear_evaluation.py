@@ -34,9 +34,9 @@ class Figures:
 
         # Assuming df has columns: 'task.outputs', 'data', 'config.outcome'
         df['task.outputs'] = df['task.outputs'].apply(lambda l: l[0])
-        best_runs = df.loc[df.groupby("task.lr")["validation_auc_epoch"].idxmax()]
+        # best_runs = df.loc[df.groupby("task.lr")["validation_auc_epoch"].idxmax()]
+        best_runs = df.loc[df['task.lr'] == 0.0005]
 
-        # df = df.loc[df['task.lr'] == 0.001]
         heatmap_data = best_runs.pivot(index='task.outputs', columns='data', values=config.task.outcome)
         heatmap_data = heatmap_data.reindex(columns=config.task.data_order)
 

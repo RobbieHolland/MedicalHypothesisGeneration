@@ -7,44 +7,7 @@ import pandas as pd
 import os
 import torch
 from Data.util import EmbeddingDataset, EmbeddingDataModule, CompressedEmbeddingDataset
-
-class ActivationsDataset(Dataset):
-    def __init__(self, config, data):
-        self.config = config
-
-        self.vectors = data['vectors'].clone() if isinstance(data['vectors'], torch.Tensor) else torch.tensor(data['vectors'])
-        self.outputs = pd.DataFrame(data[config.task.outputs])
-
-        if config.task.output_filter:
-            mask = self.outputs.isin(config.task.output_filter).all(axis=1)
-            self.outputs = self.outputs[mask]
-            self.vectors = self.vectors[mask.values]
-
-    def __len__(self):
-        return len(self.outputs)
-
-    def __getitem__(self, idx):
-        return self.vectors[idx], self.data[self.config.output_fields][idx]
-
-class ActivationDataModule(pl.LightningDataModule):
-    def __init__(self, config, activations, output_fields='sample_ids'):
-        super().__init__()
-        self.config = config
-        self.activations = activations
-        self.output_fields = output_fields
-
-    def _create_dataloader(self, dataset_data):
-        dataset = ActivationsDataset(self.config, dataset_data, self.output_fields)
-        return DataLoader(dataset, batch_size=self.config.task.batch_size, shuffle=True)
-
-    def train_dataloader(self):
-        return self._create_dataloader(self.activations['train'])
-
-    def val_dataloader(self):
-        return self._create_dataloader(self.activations['validation'])
-
-    def test_dataloader(self):
-        return self._create_dataloader(self.activations['test'])
+from Data.multimodal_dataset import CompressedMultimodalDataset
 
 import numpy as np
 
@@ -166,6 +129,38 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'])
             'validation': activation_data_module.val_dataloader(),
             'test': activation_data_module.test_dataloader(),
         }
+
+    elif data_type == 'multimodal_abdominal_ct':
+        config = config.copy()
+        config.model_name = 'multimodal_merlin'
+        from Model.get_model import get_model
+        model = get_model(config)
+
+        labels_df = load_abdominal_ct_labels(config)
+
+        from contrastive_3d.datasets import dataloaders
+        from Data.raw_database.abdominal_ct import get_dataloaders
+        dataset_config = {
+            "dataset": config.data.merlin_dataset_variant,
+            # "dataset": "stanford_disease_prediction_all",
+            "fraction_train_data": config.data.fraction_train_data,
+            "per_device_train_batch_size": config.task.batch_size,
+            "per_device_val_batch_size": config.task.batch_size,
+            "per_device_test_batch_size": config.task.batch_size,
+        }
+
+        # Louis' API
+        raw_dl = get_dataloaders(config, dataset_config, include=splits, output_filter=config.task.output_filter)
+
+        datasets, dataloaders = {}, {}
+        for split in splits:
+            raw_dataset = MultimodalCTDataset(config, raw_dl[split].dataset, labels_df, autofilter=False)
+
+            # Create dataset which compresses/loads using inference map, and also updates inference map
+            datasets[split] = CompressedMultimodalDataset(config, raw_dataset, model.inference_map, split=split)
+
+            # Create dataloader for dataset
+            dataloaders[split] = DataLoader(datasets[split], batch_size=raw_dl[split].batch_size, shuffle=raw_dl[split].sampler is not None, num_workers=raw_dl[split].num_workers, pin_memory=raw_dl[split].pin_memory)
 
     else:
         raise ValueError(f"Unknown data name: {data_type}")

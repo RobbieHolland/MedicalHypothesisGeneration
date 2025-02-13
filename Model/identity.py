@@ -9,7 +9,7 @@ class IdentityModel(ConceptModel):
         self.config = config
 
     def forward(self, x):
-        z = [l.unsqueeze(1) if l.ndim == 1 else l for l in x]
+        z = [torch.Tensor(l).unsqueeze(0) if l.ndim == 1 else l for l in x]
         z = torch.cat(z, axis=1)
         return z
     

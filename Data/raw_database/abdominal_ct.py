@@ -2,31 +2,48 @@ from contrastive_3d.datasets import monai_datalists, monai_transforms, dataset_c
 from contrastive_3d.datasets.dataloaders import CTPersistentDataset
 from monai.data import DataLoader
 from torch.utils.data import Dataset
+import pandas as pd
 
 import os
 
 class MultimodalCTDataset(Dataset):
-    def __init__(self, config, original_dataset, labels_df):
+    def __init__(self, config, original_dataset, labels_df, autofilter=True):
         self.config = config
         self.original_dataset = original_dataset  # Reference to the original dataset
-        self.labels_df = labels_df.set_index("anon_accession")  # Fast lookup
-        self.data = original_dataset.data  # Original dataset’s list of dicts
+
+        self.primary_key = 'anon_accession'
+        self.original_dataset_indexing = pd.DataFrame([l[self.primary_key] for l in self.original_dataset.data], columns=[self.primary_key])
+
+        self.dataset = pd.DataFrame(self.original_dataset.data)
+        self.dataset = self.dataset.merge(labels_df[['anon_accession'] + [col for col in labels_df if col not in self.dataset.columns]], on='anon_accession', how='left')
+
+        if autofilter:
+            self.filter()
 
     def __len__(self):
         return len(self.original_dataset)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, input_keys, output_keys):
+        sample = self.dataset.loc[idx]
+
         # Load image & existing metadata using the original dataset
-        sample = self.original_dataset.__getitem__(idx)
+        original_dataset_index = self.original_dataset_indexing.index[self.original_dataset_indexing[self.primary_key] == sample[self.primary_key]][0]
+        raw_data = self.original_dataset.__getitem__(original_dataset_index)
+        assert raw_data[self.primary_key] == sample[self.primary_key]
 
-        # Extract anon_accession and fetch corresponding metadata (no need for a check)
-        anon_accession = self.data[idx]["anon_accession"]
-        additional_metadata = self.labels_df.loc[anon_accession].to_dict()
+        # Combine return data
+        raw_data.update(sample.loc[[i for i in sample.index if i not in raw_data.keys()]].to_dict())
+        input_row = {k: raw_data[k] for k in input_keys}
+        output_row = sample[output_keys].to_dict()
+        
+        # return dict(zip(self.input_keys, input_row)), dict(zip(self.output_keys, output_row))
+        return input_row, output_row
 
-        # Inject new metadata into the sample
-        sample.update(additional_metadata)
-
-        return sample  # Return the updated sample (image + metadata)
+    def filter(self):
+        if self.config.task.output_filter:
+            inclusion_mask = self.dataset[self.config.task.outputs].isin(self.config.task.output_filter).all(axis=1)
+            self.dataset = self.dataset.loc[inclusion_mask]
+            self.dataset = self.dataset.reset_index(drop=True)
 
 class FilteredDataset(CTPersistentDataset):
     def __init__(self, config, data, transform, cache_dir, label_names):

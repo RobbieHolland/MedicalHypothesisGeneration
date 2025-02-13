@@ -1,4 +1,4 @@
-wandb_sweep_id: 255trqr1
+wandb_sweep_id: t3qho6x5
 outcome: 'test_auc_epoch'
 
 data_order: ['phecodes', 'abdominal_text_embeddings', 'abdominal_ct_embeddings', 'abdominal_ct_text_embeddings']
