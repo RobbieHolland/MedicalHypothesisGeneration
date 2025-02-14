@@ -33,8 +33,8 @@ class LinearEvaluation(TrainableSave):
         }
 
     def forward(self, x):
-        with torch.no_grad():
-            z = self.model.latent(x).to(torch.float16)
+        # with torch.no_grad():
+        z = self.model.latent(x).to(torch.float16)
         return self.classifier(z)
     
     def _shared_step(self, batch, phase):

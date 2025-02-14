@@ -396,7 +396,34 @@ class TextEncoder(nn.Module):
         if "pubmedbert" in self.config["text_encoder"]:
             text_embeddings = self.text_encoder(**inputs).last_hidden_state[:, 0, :]
         elif "longformer" in self.config["text_encoder"]:
-            text_embeddings = self.text_encoder(**inputs).last_hidden_state[:, 0, :]
+
+            # If we're passing embeddings
+            if hasattr(text_labels[0], 'dtype') and isinstance(text_labels[0].dtype, torch.dtype) and text_labels[0].dtype == torch.float32:
+                # Ensure token embeddings require gradients
+                text_labels = text_labels[0].requires_grad_(True)
+
+                # Ensure Longformer gets the correct input size
+                seq_length = text_labels.shape[1]
+                target_length = (seq_length // 512 + 1) * 512  # Round up to multiple of 512
+
+                # Pad token embeddings to be a multiple of 512
+                from torch.nn import functional as F
+                text_labels_padded = F.pad(text_labels, (0, 0, 0, target_length - seq_length), value=0)
+                attention_mask_padded = F.pad(inputs['attention_mask'], (0, target_length - seq_length), value=0)
+
+                # Pass embeddings into Longformer while pretending they're hidden states
+                encoder_outputs = self.text_encoder.encoder(
+                    text_labels_padded.to(inputs['attention_mask'].device),
+                    attention_mask=attention_mask_padded
+                )
+
+                # Extract last hidden state
+                text_embeddings = encoder_outputs.last_hidden_state[:, 0, :]
+
+            # If we're passing input_ids
+            else:
+                text_embeddings = self.text_encoder(**inputs).last_hidden_state[:, 0, :]
+
             text_embeddings = self.linear_layer(text_embeddings)
         elif "openclip" in self.config["text_encoder"]:
             inputs = inputs.cuda()

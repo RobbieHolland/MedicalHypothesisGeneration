@@ -10,13 +10,36 @@ def get_multimodal_merlin(config, compress=True):
 
     from Analysis.run.linear_evaluation import LinearEvaluation
     linear_model_path = '/dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MedicalHypothesisGeneration-Analysis_run/LinearEvaluation/t3qho6x5/abdominal_ct_text_embeddings/ost/dark-sweep-32/epoch=23-step=504.ckpt'
-    linear_model = LinearEvaluation.load_from_checkpoint(linear_model_path)
+    linear_model = LinearEvaluation.load_from_checkpoint(linear_model_path).to(device)
 
     # Define inference map
+    # Define explicit functions instead of lambdas
+    def encode_image(image_list):
+        return compression_model.latent(torch.cat(image_list, dim=0))  # Use cat to avoid breaking gradient flow
+
+    def encode_text(text_embeddings):
+        return compression_model.model.encode_text(text_embeddings)
+
+    def process_ost(inputs):
+        return linear_model(inputs)
+
+    # Updated inference map without lambdas
     inference_map = {
-        'image': {'output_field': 'merlin/image', 'compress': compress, 'forward_model': lambda x: compression_model.latent(torch.stack(x))},
-        'findings': {'output_field': 'merlin/findings', 'compress': compress, 'forward_model': lambda x: compression_model.model.encode_text(x)},
-        ('merlin/image', 'merlin/findings'): {'output_field': 'ost_prediction', 'compress': False, 'forward_model': lambda x: linear_model(x)}
+        'image': {
+            'output_field': 'merlin/image',
+            'compress': compress,
+            'forward_model': encode_image  # Replaces lambda
+        },
+        'findings': {
+            'output_field': 'merlin/findings',
+            'compress': compress,
+            'forward_model': encode_text  # Replaces lambda
+        },
+        ('merlin/image', 'merlin/findings'): {
+            'output_field': 'ost_prediction',
+            'compress': False,
+            'forward_model': process_ost  # Replaces lambda
+        }
     }
 
     from Model.multimodal_model import MultimodalModel
