@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 
 class MultimodalModel(nn.Module):
-    def __init__(self, config, inference_map):
+    def __init__(self, config, models, inference_map):
         super().__init__()
         self.config = config
+        self.models = models
         self.inference_map = inference_map
 
     def forward(self, inputs):

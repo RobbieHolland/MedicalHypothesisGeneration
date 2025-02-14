@@ -19,6 +19,9 @@ def load_abdominal_ct_labels(config):
     # merlin_datasets, _ = create_dataloaders(config)
 
     phecode_findings_metadata = pd.read_csv(config.paths.abdominal_phecode_labels)
+
+    # diagnosis_metadata = pd.read_csv(config.paths.thirty_diagnosis_labels)
+
     labels_df = labels_df.merge(phecode_findings_metadata, on='anon_accession', how='left')
 
     return labels_df

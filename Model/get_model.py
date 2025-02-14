@@ -41,9 +41,10 @@ def get_multimodal_merlin(config, compress=True):
             'forward_model': process_ost  # Replaces lambda
         }
     }
+    models = {'merlin': compression_model, 'linear': linear_model}
 
     from Model.multimodal_model import MultimodalModel
-    model = MultimodalModel(config, inference_map)
+    model = MultimodalModel(config, models, inference_map)
     return model
 
 def get_model(config, specific_model_name=None, device=None):

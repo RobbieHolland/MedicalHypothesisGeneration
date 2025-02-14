@@ -5,178 +5,275 @@ from Data.get_data import get_data
 from Analysis.run.linear_evaluation import LinearEvaluation
 from types import MethodType
 from torch.cuda.amp import autocast
+import pandas as pd
+import numpy as np
+import os
+import random
 
 torch.utils.checkpoint.checkpoint = lambda func, *args, **kwargs: func(*args, **kwargs)
 
-class IntegratedGradients:
-    def __init__(self, model, baseline=None, steps=50, device=None):
-        """
-        Initializes the IG explainer.
+def visualize_attribution(inputs, sample_ix, output, tokens, image_attributions, findings_attributions, output_dir):
+    import os
+    import html
+    import numpy as np
+    import base64
+    import io
+    from PIL import Image
+
+    # Assume these are defined:
+    #   tokens, findings_attributions, sample_ix, output, output_dir, inputs
+    #   inputs["image"] -> CT volume as a 3D numpy array (D, H, W)
+    #   inputs["ct_attributions"] -> corresponding attributions (D, H, W)
+
+    title = f"Patient {sample_ix} findings importance for {output}"
+
+    # --------------------------
+    # Left Panel: Text Attributions
+    # --------------------------
+    attr_vals = findings_attributions[0].cpu().numpy()
+    max_abs = np.abs(attr_vals).max() or 1  # avoid div-by-zero
+    alpha_min, alpha_max = 0.2, 0.8
+
+    def styled_token(token, val):
+        token_text = html.escape(token.replace("Ġ", ""))
+        s = val / max_abs
+        alpha = alpha_min + (alpha_max - alpha_min) * abs(s)
+        color = f"rgba({'255, 0, 0' if s < 0 else '0, 255, 0'}, {alpha:.2f})"
+        return f"<span style='background-color:{color}; color:black;'>{token_text}</span>"
+
+    html_tokens = [styled_token(t, v) for t, v in zip(tokens, attr_vals)]
+    main_body = " ".join(html_tokens)
+
+    indices = np.arange(len(attr_vals))
+    top5_pos = sorted(indices[attr_vals > 0], key=lambda i: attr_vals[i], reverse=True)[:5]
+    top5_neg = sorted(indices[attr_vals < 0], key=lambda i: attr_vals[i])[:5]
+
+    top_pos_list = "<ol>" + "".join(f"<li>{styled_token(tokens[i], attr_vals[i])}</li>" for i in top5_pos) + "</ol>"
+    top_neg_list = "<ol>" + "".join(f"<li>{styled_token(tokens[i], attr_vals[i])}</li>" for i in top5_neg) + "</ol>"
+
+    text_html_content = main_body + (
+        "<hr><h2>Top 5 Positive Firing Tokens</h2>" + top_pos_list +
+        "<h2>Top 5 Negative Firing Tokens</h2>" + top_neg_list
+    )
+
+    # --------------------------
+    # Right Panel: Top 4 CT Axial Slices with Overlay
+    # --------------------------
+    ct_volume = inputs["image"].detach().squeeze().numpy()          # shape: (D, H, W)
+    ct_attributions = image_attributions.squeeze().numpy()
+
+    # Compute per-slice importance (sum of abs(attributions))
+    slice_importance = np.abs(ct_attributions.squeeze()).sum((0, 1))
+    # Get indices for top 4 slices (in descending order)
+    top4_indices = np.argsort(slice_importance)[-4:]
+
+    def generate_overlay_image(ct_slice, attrib_slice, alpha_min=0.0, alpha_max=0.5):
+        # Normalize CT slice to 0-255 grayscale
+        ct_min, ct_max = ct_slice.min(), ct_slice.max()
+        if ct_max - ct_min == 0:
+            ct_norm = np.zeros_like(ct_slice, dtype=np.uint8)
+        else:
+            ct_norm = ((ct_slice - ct_min) / (ct_max - ct_min) * 255).astype(np.uint8)
+        base_img = Image.fromarray(ct_norm, mode='L').convert("RGBA")
         
-        Args:
-            model (torch.nn.Module): The PyTorch model.
-            baseline (torch.Tensor or None): The reference input. Defaults to zeros if None.
-            steps (int): Number of interpolation steps.
-            device (str or None): Device to run computations on (auto-detect if None).
-        """
-        self.model = model.to(device or "cuda" if torch.cuda.is_available() else "cpu")
-        self.steps = steps
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.baseline = baseline  # If None, it will be set dynamically.
+        # Prepare overlay: normalize attributions and compute per-pixel alpha
+        max_abs_attrib = np.abs(attrib_slice).max() or 1.0
+        norm_attrib = attrib_slice / max_abs_attrib  # in [-1, 1]
+        alpha = alpha_min + (alpha_max - alpha_min) * np.abs(norm_attrib)
+        alpha_scaled = (alpha * 255).astype(np.uint8)
+        
+        H, W = ct_slice.shape
+        overlay_arr = np.zeros((H, W, 4), dtype=np.uint8)
+        # Set red for negative and green for positive
+        overlay_arr[..., 0] = np.where(norm_attrib < 0, 255, 0)   # red channel
+        overlay_arr[..., 1] = np.where(norm_attrib >= 0, 255, 0)  # green channel
+        overlay_arr[..., 3] = alpha_scaled  # alpha channel
+        overlay_img = Image.fromarray(overlay_arr, mode='RGBA')
+        
+        composite_img = Image.alpha_composite(base_img, overlay_img)
+        
+        buffer = io.BytesIO()
+        composite_img.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-    def _generate_interpolated_inputs(self, x):
-        """Creates interpolated inputs between the baseline and actual input."""
-        baseline = self.baseline if self.baseline is not None else torch.zeros_like(x)
-        alphas = torch.linspace(0, 1, self.steps).view(-1, *[1] * (x.dim() - 1)).to(self.device)
-        return baseline + alphas * (x - baseline)  # Shape: (steps, *x.shape)
+    images_html = ""
+    for idx in top4_indices:
+        b64_img = generate_overlay_image(ct_volume[:,:,idx], ct_attributions[:,:,idx])
+        images_html += f'<img src="data:image/png;base64,{b64_img}" style="width:100%; margin-bottom:10px;" />\n'
 
-    def _compute_gradients(self, x, output_index):
-        """Computes gradients for each interpolated input."""
-        x.requires_grad_(True)
-        outputs = self.model(x)[:, output_index]  # Extract output neuron of interest
-        grads = torch.autograd.grad(outputs.sum(), x)[0]  # Compute gradients
-        return grads  # Shape: (steps, *x.shape)
+    # --------------------------
+    # Build Final HTML
+    # --------------------------
+    html_text = f"""<!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="UTF-8">
+    <title>{title}</title>
+    <style>
+        body {{
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        }}
+        .container {{
+        display: flex;
+        gap: 20px;
+        }}
+        .attribution {{
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #ccc;
+        overflow-y: auto;
+        max-height: 800px;
+        }}
+        .viewer {{
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #ccc;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        }}
+        .viewer img {{
+        width: 100%;
+        height: auto;
+        display: block;
+        }}
+    </style>
+    </head>
+    <body>
+    <h1>{title}</h1>
+    <div class="container">
+        <div class="attribution">
+        {text_html_content}
+        </div>
+        <div class="viewer">
+        {images_html}
+        </div>
+    </div>
+    </body>
+    </html>
+    """
 
-    def explain(self, x, output_index):
-        """
-        Computes Integrated Gradients attributions for the given input.
+    with open(os.path.join(output_dir, "colored_text.html"), "w") as f:
+        f.write(html_text)
 
-        Args:
-            x (torch.Tensor): The input tensor (batch supported).
-            output_index (int): Index of the output neuron to explain.
 
-        Returns:
-            torch.Tensor: Attribution map of the same shape as `x`.
-        """
-        x = x.to(self.device)
-        interpolated_inputs = self._generate_interpolated_inputs(x)
-        grads = self._compute_gradients(interpolated_inputs, output_index)
-        avg_grads = grads.mean(dim=0)  # Average gradients over the interpolation steps
-        attributions = (x - self.baseline) * avg_grads if self.baseline is not None else x * avg_grads
-        return attributions
-
-@hydra.main(config_path="../../config", config_name="default", version_base=None)
-def main(config):
-    import torch
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-    datasets, dataloaders = get_data(config, splits=['validation'])
-
-    inputs, outputs = datasets['validation'].__getitem__(0)
-
-    compression_model = get_model(config, specific_model_name='merlin')
-    compression_model = compression_model.to(device)
+def run_attribution(model, inputs, outputs, device, output_dir, sample_ix, outcome):
+    compression_model = model.models['merlin'].eval().to(device)
     tokenizer = compression_model.model.encode_text.tokenizer
-    
-    model = get_model(config)
-    model.inference_map = datasets['validation'].inference_map
-    model = model.eval()
-    model = model.to(device)
 
     import numpy as np
-    inputs['image'] = torch.Tensor(inputs['image']).to(device)
-    input_ids = tokenizer(inputs['findings'].lower(), return_tensors="pt", padding=True, truncation=True)["input_ids"].to(device)
-    token_embeddings = compression_model.model.encode_text.text_encoder.embeddings.word_embeddings(input_ids)
+    inputs['image'] = torch.Tensor(inputs['image']).unsqueeze(0).to(device)
 
     with autocast(dtype=torch.float16):
         # outputs = model.forward(inputs)
         # y = outputs['ost_prediction']
 
         # Move tokenizer output to the correct device
-        input_ids = tokenizer(inputs['findings'].lower(), return_tensors="pt", padding=True, truncation=True)["input_ids"]
-        input_ids = input_ids.to(device)  # Move input_ids to the model's device
+        # Assume activations and gradients dictionaries are defined
+        activations, gradients = {}, {}
 
-        # Generate token embeddings and enable gradients
-        token_embeddings = compression_model.model.encode_text.text_encoder.embeddings.word_embeddings(input_ids)
-        token_embeddings = token_embeddings.clone().detach().requires_grad_(True)
+        def save_activation(name):
+            def hook(module, inp, outp):
+                activations[name] = outp
+            return hook
 
-        # Ensure image input is on the correct device and dtype
-        image_input = inputs["image"].to(device, dtype=torch.float32).requires_grad_(True)
+        def save_gradient(name):
+            def hook(module, grad_inp, grad_outp):
+                gradients[name] = grad_outp[0]
+            return hook
+
+        # Register hooks on the embedding layer
+        embedding_layer = compression_model.model.encode_text.text_encoder.embeddings.word_embeddings
+        embedding_handle = embedding_layer.register_forward_hook(save_activation("embedding"))
+        embedding_grad_handle = embedding_layer.register_backward_hook(save_gradient("embedding"))
+
+        # Register hook on the image input tensor
+        inputs["image"].requires_grad = True
+        image_hook_handle = inputs["image"].register_hook(lambda grad: gradients.setdefault("image", grad))
 
         # Forward pass
-        inputs_dict = {
-            "image": image_input.unsqueeze(1),
-            "findings": token_embeddings
-        }
-        output = model(inputs_dict)['ost_prediction']
+        output = model(inputs)['ost_prediction']
 
-        # # Compute gradients w.r.t. inputs
-        # target_class = 0  # Adjust if needed
-        # loss = output[:, target_class].sum()
-        # loss.backward()
+        # Use BCEWithLogitsLoss for classification
+        criterion = model.models['linear'].criterion
+        # Define a target tensor; adjust shape/values as appropriate for your task
+        target = torch.Tensor([[1 - outputs['ost'], outputs['ost']]]).to(output.device)  
+        loss = criterion(output, target)
 
-        # # Get gradients
-        # image_gradients = image_input.grad
-        # text_gradients = token_embeddings.grad
-
-        # Define the attribution method
-        from captum.attr import InputXGradient
-
-        # Define forward function compatible with Captum
-        def forward_func(image_tensor, token_embeddings):
-            # Prepare input dict for model
-            inputs_dict = {
-                "image": image_tensor.requires_grad_(True),
-                "findings": token_embeddings.requires_grad_(True)  # Now using extracted token embeddings
-            }
-
-            outputs = model(inputs_dict)  # Forward pass
-            return outputs['ost_prediction']  # Extract 'ost_prediction'
-
-        # Wrap model in attribution method
-        input_x_gradient = InputXGradient(forward_func)
-
-        # Target class index
-        target_class = torch.tensor([0])
-
-        # Compute attributions
-        attributions = input_x_gradient.attribute((inputs_dict['image'], inputs_dict['findings']), target=target_class)
-
-        # Detach attributions
-        image_attributions = attributions[0].detach()
-        findings_attributions = attributions[1].detach()
-        findings_attributions = findings_attributions.sum(2)
-
-        print(image_attributions.shape)
-        print(findings_attributions.shape)
+        loss.backward()
 
         # 1) Convert IDs back to actual tokens
         encoded = tokenizer(inputs['findings'].lower(), return_tensors="pt", padding=True, truncation=True)
         tokens = tokenizer.convert_ids_to_tokens(encoded["input_ids"][0])
 
-        import html
+        # Compute Input x Gradient manually
+        input_x_grad_embedding = activations["embedding"] * gradients["embedding"]
+        input_x_grad_embedding = input_x_grad_embedding[:, :len(tokens)]
 
-        attr_vals = findings_attributions[0].cpu().numpy()
+        input_x_grad_image = inputs["image"] * gradients["image"]
 
-        max_abs = max(abs(attr_vals.min()), abs(attr_vals.max()), 1e-9)
+        print("Embedding InputXGradient shape:", input_x_grad_embedding.shape)
+        print("Image InputXGradient shape:", input_x_grad_image.shape)
 
-        alpha_min = 0.2
-        alpha_max = 0.8
+        # Detach attributions
+        image_attributions = input_x_grad_image.detach().cpu()
+        findings_attributions = input_x_grad_embedding.detach()
+        findings_attributions = findings_attributions.sum(2).cpu()
 
-        html_tokens = []
-        for token, val in zip(tokens, attr_vals):
-            # Replace "Ġ" with a space for readability
-            token_text = token.replace("Ġ", "")
+        embedding_handle.remove()
+        embedding_grad_handle.remove()
+        image_hook_handle.remove()
 
-            # Escape any HTML-like characters to avoid strikethrough or other unwanted rendering
-            token_text = html.escape(token_text)
+        print(image_attributions.shape)
+        print(findings_attributions.shape)
 
-            scaled = max(-1, min(1, val / max_abs))
-            alpha = alpha_min + (alpha_max - alpha_min) * abs(scaled)
+        inputs["image"] = inputs["image"].cpu()
 
-            if scaled < 0:
-                color = f"rgba(255, 0, 0, {alpha:.2f})"  # red
-            else:
-                color = f"rgba(0, 255, 0, {alpha:.2f})"   # green
-
-            html_tokens.append(f"<span style='background-color:{color}; color:black;'>{token_text}</span>")
-
-        html_text = " ".join(html_tokens)
-        with open("colored_text.html", "w") as f:
-            f.write(html_text)
+        visualize_attribution(inputs, sample_ix, outcome, tokens, image_attributions, findings_attributions, output_dir)
 
         x = 3
 
+@hydra.main(config_path="../../config", config_name="default", version_base=None)
+def main(config):
+    import torch
+    random.seed(config.seed)
+    np.random.seed(config.seed)
+
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    datasets, dataloaders = get_data(config, splits=['validation'])
+
+    model = get_model(config)
+    model.inference_map = {k: v for (k, v) in model.inference_map.items() if not v['compress']}
+    model = model.eval()
+    model = model.to(device)
+
+    # Create quantiles
+    target = datasets['validation'].dataset.dataset[config.task.outputs[0]]
+    qs = 10
+    k = 5
+    n_unique = target.nunique()
+
+    if n_unique < qs:
+        # Create bins based on unique values.
+        bins = np.linspace(target.min(), target.max(), n_unique + 1)
+        quantiles = pd.cut(target, bins=bins, labels=False, include_lowest=True)
+    else:
+        quantiles = pd.qcut(target, q=qs, labels=False, duplicates='drop')
+
+    threshold = 1
+    samples_ixs = datasets['validation'].dataset.dataset.loc[quantiles >= threshold].sample(k).index
+
+    for sample_ix in samples_ixs:
+        inputs, outputs = datasets['validation'].__getitem__(sample_ix)
+
+        analysis_dir = os.path.join(config.base_dir, 'Analysis/output')
+        output_dir = os.path.join(analysis_dir, 'feature_attribution')
+        association_dir = os.path.join(output_dir, f"{config.task.outputs}", f">={threshold}", f"{sample_ix}")
+        os.makedirs(association_dir, exist_ok=True)
+
+        run_attribution(model, inputs, outputs, device, association_dir, sample_ix, config.task.outputs[0])
         # # Initialize IG and compute attributions for output neuron 0
         # ig = IntegratedGradients(model, steps=100)
         # attributions = ig.explain(x, output_index=0)
