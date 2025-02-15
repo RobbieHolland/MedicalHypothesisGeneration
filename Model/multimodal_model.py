@@ -3,10 +3,9 @@ import torch.nn as nn
 
 # Updated Multimodal Model
 class MultimodalModel(nn.Module):
-    def __init__(self, config, models, inference_map):
+    def __init__(self, config, inference_map):
         super().__init__()
         self.config = config
-        self.models = models
 
         # Convert inference_map into an nn.ModuleDict for proper save/load behavior
         self.inference_map = nn.ModuleDict({

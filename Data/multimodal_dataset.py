@@ -6,6 +6,7 @@ from Data.util import EmbeddingDataset
 import pytorch_lightning as pl
 from Pretraining.util.extract_model_output import extract_vectors_for_split
 import numpy as np
+import pandas as pd
 
 class CompressedMultimodalDataset(pl.LightningModule):
     def __init__(self, config, dataset, model, split, batch_size=224):
@@ -91,15 +92,22 @@ class CompressedMultimodalDataset(pl.LightningModule):
                 if os.path.exists(cache_path):
                     print(f"Loading cached embeddings for {field} from {cache_path}")
                     compressed_values = torch.load(cache_path)
+
                 else:
                     print(f"Computing embeddings for {field}")
-                    compressed_values = extract_vectors_for_split(self.config, self.dataloader, inference_model, self.input_keys.index(field), [])
+                    compressed_values = extract_vectors_for_split(self.config, self.dataloader, inference_model, self.input_keys.index(field), ['anon_accession'])
                     compressed_values = {k: torch.stack(v) for (k, v) in compressed_values.items()}
 
                     torch.save(compressed_values, cache_path)
                     print(f"Saved embeddings to {cache_path}")
 
-                self.dataset.dataset[compressed_field_name] = list(np.array(torch.Tensor(compressed_values["output" if "output" in compressed_values else "vectors"])))
+                stored_embedding_name = "output" if "output" in compressed_values else "vectors"
+                compressed_values[compressed_field_name] = list(np.array(torch.Tensor(compressed_values[stored_embedding_name])))
+                compressed_values.pop(stored_embedding_name)
+                
+                # self.dataset.dataset[compressed_field_name] = list(np.array(torch.Tensor(compressed_values["output" if "output" in compressed_values else "vectors"])))
+                self.dataset.dataset = self.dataset.dataset.merge(pd.DataFrame(compressed_values), how='left', left_on='anon_accession', right_on='sample_ids')
+
                 self.input_keys[self.input_keys.index(field)] = compressed_field_name
                 # self.inference_map.pop(field, None)
                 # del self.inference_map[field]

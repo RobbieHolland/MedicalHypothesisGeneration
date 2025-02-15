@@ -41,11 +41,16 @@ def get_multimodal_merlin(config, compress=True):
     compression_model = load_model(config).to(device)
 
     # Load Linear Model
-    linear_model_path = '/dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MedicalHypothesisGeneration-Analysis_run/LinearEvaluation/t3qho6x5/abdominal_ct_text_embeddings/ost/dark-sweep-32/epoch=23-step=504.ckpt'
-    linear_model = LinearEvaluation.load_from_checkpoint(linear_model_path).to(device)
+    # linear_model_path = '/dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MedicalHypothesisGeneration-Analysis_run/LinearEvaluation/t3qho6x5/abdominal_ct_text_embeddings/ost/dark-sweep-32/epoch=23-step=504.ckpt'
+    # linear_model = LinearEvaluation.load_from_checkpoint(linear_model_path).to(device)
 
     # Define inference map with proper nn.Modules
     inference_map = {
+        # 'image': {
+        #     'output_field': 'merlin/image',
+        #     'compress': compress,
+        #     'forward_model': ImageEncoder(compression_model)
+        # },
         'image': {
             'output_field': 'merlin/image',
             'compress': compress,
@@ -57,17 +62,32 @@ def get_multimodal_merlin(config, compress=True):
             'forward_model': TextEncoder(compression_model)
         },
         ('merlin/image', 'merlin/findings'): {
-            'output_field': 'ost_prediction',
+            'output_field': 'multimodal_embedding',
             'compress': False,
-            'forward_model': OSTModel(linear_model)
-        }
+            'forward_model': IdentityModel(config),
+        },
+        # 'merlin/image': {
+        #     'output_field': 'multimodal_embedding',
+        #     'compress': False,
+        #     'forward_model': IdentityModel(config),
+        # },
+        # ('multimodal_embedding'): {
+        #     'output_field': 'ost_prediction',
+        #     'compress': False,
+        #     'forward_model': OSTModel(linear_model)
+        # }
     }
 
-    # Register models
-    models = {'merlin': compression_model, 'linear': linear_model}
+    # inference_map = {
+    #     'phecodes': {
+    #         'output_field': 'multimodal_embedding',
+    #         'compress': False,
+    #         'forward_model': IdentityModel(config),
+    #     },
+    # }
 
     # Instantiate Multimodal Model
-    model = MultimodalModel(config, models, inference_map)
+    model = MultimodalModel(config, inference_map)
     
     return model
 

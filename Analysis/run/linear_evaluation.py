@@ -15,15 +15,17 @@ class LinearEvaluation(TrainableSave):
         super().__init__(config)
         self.save_hyperparameters()
 
+        self.dev = torch.device('cuda:0')
+
         self.config = config
         self.model = model
-        for p in self.model.parameters():
-            p.requires_grad = False
+
+        for name, param in self.model.named_parameters():
+            param.requires_grad = False
         self.model.eval()
 
         # Ensure at least 2 heads, even for binary classification
         self.num_heads = max(config.task.num_outs, 2)
-        self.classifier = nn.Linear(config.data.latent_dim, self.num_heads)
         self.criterion = nn.BCEWithLogitsLoss()
 
         # Metrics
@@ -36,14 +38,22 @@ class LinearEvaluation(TrainableSave):
         return self.model(x)['prediction']
     
     def _shared_step(self, batch, phase):
-        dtype = torch.float16 if str(self.trainer.precision) in ["16", "16-mixed"] else torch.bfloat16 if str(self.precision) in ["bf16", "bf16-mixed"] else torch.float32
+        # dtype = torch.float16 if str(self.trainer.precision) in ["16", "16-mixed"] else torch.bfloat16 if str(self.precision) in ["bf16", "bf16-mixed"] else torch.float32
 
-        x = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[0].items()}
-        y = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[1].items()}
+        x = batch[0]  # expecting a dict of tensors
+        y = batch[1]
+
+
+        # x = torch.Tensor(x).squeeze(0).to(self.dev)
+        # y = torch.Tensor(y).squeeze(0).to(self.dev)
+
+        # x = {'merlin/image': x}
+        # x = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[0].items()}
+        # y = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[1].items()}
         y = y[self.config.task.outputs[0]]
 
-        if hasattr(y, "as_tensor"):
-            y = y.as_tensor()
+        # if hasattr(y, "as_tensor"):
+        #     y = y.as_tensor()
         
         y = y.to(torch.long)  # `one_hot` requires integer indices
         y = F.one_hot(y, num_classes=2).float()
@@ -98,7 +108,7 @@ class LinearEvaluation(TrainableSave):
         return auc_val
 
     def configure_optimizers(self):
-        optimizer = AdamW(self.classifier.parameters(), lr=self.config.task.lr)
+        optimizer = AdamW(self.model.parameters(), lr=self.config.task.lr)
         return optimizer
 
 @hydra.main(config_path="../../config", config_name="default", version_base=None)
@@ -143,32 +153,38 @@ def run(config):
 
     linear_eval = LinearEvaluation(config, model)
 
-    multimodal_identity = get_model(config, specific_model_name='identity')
-
     class ClassifierModel(nn.Module):
-        def __init__(self, multimodal_identity, linear_eval):
+        def __init__(self):
             super().__init__()
-            self.multimodal_identity = multimodal_identity
-            self.classifier = linear_eval.classifier
+            self.num_heads = max(config.task.num_outs, 2)
+            self.classifier = nn.Linear(config.data.latent_dim, self.num_heads)
 
-        def forward(self, x):
-            z = self.multimodal_identity(x)
+        def forward(self, z):
             return self.classifier(z)
+        
+    classifier_module = ClassifierModel()
+    for param in classifier_module.parameters():
+        param.requires_grad = True
 
-    model.update_inference_map(('merlin/image', 'merlin/findings'), ClassifierModel(multimodal_identity, linear_eval), 'prediction', False)
+    classifier_module = classifier_module.to(device)
+
+    model.update_inference_map('multimodal_embedding', classifier_module, 'prediction', False)
+    # model.update_inference_map('merlin/image', classifier_module, 'prediction', False)
 
     from util.lightning import validation_check_intervals
     val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(dataloaders['train']))
 
     sweep_id = wandb.run.sweep_id if wandb.run.sweep_id else 'no_sweep'
     save_path = os.path.join(config.pretrained_model_dir, wandb.run.project, wandb.run.group, sweep_id, config.data.name, config.task.outputs[0], wandb.run.name)
+    print(f'Checkpoints will be saved to {save_path}')
+
     trainer = Trainer(
         max_steps=config.task.max_steps,
         val_check_interval=val_check_interval,
         check_val_every_n_epoch=check_val_every_n_epoch,
         accelerator="gpu",
         devices=1,
-        precision=16,
+        # precision=16,
         callbacks=[pl.callbacks.ModelCheckpoint(dirpath=save_path, save_top_k=1, mode='max', monitor="validation_auc_epoch")],
     )
     trainer.validate(linear_eval, dataloaders['validation'])
@@ -178,7 +194,7 @@ def run(config):
 
     # Load the best model
     print(f'Testing {best_model_path}')
-    best_model = LinearEvaluation.load_from_checkpoint(best_model_path)
+    best_model = LinearEvaluation.load_from_checkpoint(best_model_path, model=model)
 
     trainer.test(best_model, dataloaders['test'])
 

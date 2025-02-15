@@ -13,10 +13,11 @@ class MultimodalCTDataset(Dataset):
         self.original_dataset = original_dataset  # Reference to the original dataset
 
         self.primary_key = 'anon_accession'
-        self.original_dataset_indexing = pd.DataFrame([l[self.primary_key] for l in self.original_dataset.data], columns=[self.primary_key])
+        # self.original_dataset_indexing = pd.DataFrame([l[self.primary_key] for l in self.original_dataset.data], columns=[self.primary_key])
 
-        self.dataset = pd.DataFrame(self.original_dataset.data)
-        self.dataset = self.dataset.merge(labels_df[['anon_accession'] + [col for col in labels_df if col not in self.dataset.columns]], on='anon_accession', how='left')
+        # self.dataset = pd.DataFrame(self.original_dataset.data)
+        self.dataset = self.original_dataset
+        self.dataset = self.dataset.merge(labels_df[[self.primary_key] + [col for col in labels_df if col not in self.dataset.columns]], on=self.primary_key, how='left')
 
         if autofilter:
             self.filter()
