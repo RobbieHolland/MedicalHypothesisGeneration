@@ -33,13 +33,14 @@ class LinearEvaluation(TrainableSave):
         }
 
     def forward(self, x):
-        # with torch.no_grad():
-        z = self.model.latent(x).to(torch.float16)
-        return self.classifier(z)
+        return self.model(x)['prediction']
     
     def _shared_step(self, batch, phase):
-        x = [torch.stack([torch.as_tensor(arr).to(self.model.device) for arr in input_fields]) for input_fields in batch[0]]
-        y = torch.Tensor(batch[1]).squeeze(0).to(self.model.device)
+        dtype = torch.float16 if str(self.trainer.precision) in ["16", "16-mixed"] else torch.bfloat16 if str(self.precision) in ["bf16", "bf16-mixed"] else torch.float32
+
+        x = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[0].items()}
+        y = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[1].items()}
+        y = y[self.config.task.outputs[0]]
 
         if hasattr(y, "as_tensor"):
             y = y.as_tensor()
@@ -101,6 +102,24 @@ class LinearEvaluation(TrainableSave):
         return optimizer
 
 @hydra.main(config_path="../../config", config_name="default", version_base=None)
+def test_dataloader(config):
+    from pytorch_lightning import Trainer
+    from util.wandb import init_wandb
+    init_wandb(config)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    # Load dataloaders
+    from Data.get_data import get_data
+    datasets, dataloaders = get_data(config)
+    # datasets, dataloaders = get_data(config, splits=['validation'])
+
+    batch = next(iter(dataloaders['train']))
+    
+    from tqdm import tqdm
+    for i in tqdm(range(20)):
+        batch = next(iter(dataloaders['train']))
+
+@hydra.main(config_path="../../config", config_name="default", version_base=None)
 def run(config):
     from pytorch_lightning import Trainer
     from util.wandb import init_wandb
@@ -110,12 +129,33 @@ def run(config):
     # Load dataloaders
     from Data.get_data import get_data
     datasets, dataloaders = get_data(config)
+    # datasets, dataloaders = get_data(config, splits=['validation'])
     
     # Load model to evaluate
     from Model.get_model import get_model
     model = get_model(config, device=device)
+    
+    keys_to_remove = [k for k in model.inference_map.keys() if model.inference_metadata[k]['compress']]
+
+    for k in keys_to_remove:
+        del model.inference_map[k]
+        del model.inference_metadata[k]  # Ensure metadata is also removed
 
     linear_eval = LinearEvaluation(config, model)
+
+    multimodal_identity = get_model(config, specific_model_name='identity')
+
+    class ClassifierModel(nn.Module):
+        def __init__(self, multimodal_identity, linear_eval):
+            super().__init__()
+            self.multimodal_identity = multimodal_identity
+            self.classifier = linear_eval.classifier
+
+        def forward(self, x):
+            z = self.multimodal_identity(x)
+            return self.classifier(z)
+
+    model.update_inference_map(('merlin/image', 'merlin/findings'), ClassifierModel(multimodal_identity, linear_eval), 'prediction', False)
 
     from util.lightning import validation_check_intervals
     val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(dataloaders['train']))
@@ -146,3 +186,4 @@ def run(config):
 
 if __name__ == "__main__":
     run()
+    # test_dataloader()

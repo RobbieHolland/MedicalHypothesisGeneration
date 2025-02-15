@@ -1,19 +1,39 @@
 import torch
 import torch.nn as nn
 
+# Updated Multimodal Model
 class MultimodalModel(nn.Module):
     def __init__(self, config, models, inference_map):
         super().__init__()
         self.config = config
         self.models = models
-        self.inference_map = inference_map
+
+        # Convert inference_map into an nn.ModuleDict for proper save/load behavior
+        self.inference_map = nn.ModuleDict({
+            str(key): mapping['forward_model'] for key, mapping in inference_map.items()
+        })
+
+        # Store metadata separately (compress flags, output fields)
+        self.inference_metadata = {
+            str(key): {'output_field': mapping['output_field'], 'compress': mapping['compress']}
+            for key, mapping in inference_map.items()
+        }
+
+    def update_inference_map(self, key, forward_model, output_field, compress=False):
+        self.inference_map[str(key)] = forward_model
+        self.inference_metadata[str(key)] = {'output_field': output_field, 'compress': compress}
+
+    def remove_compressed_entries(self):
+        for k in [k for k in self.inference_metadata if self.inference_metadata[k]['compress']]:
+            del self.inference_map[k]
+            del self.inference_metadata[k]
 
     def forward(self, inputs):
         intermediate_outputs = {}
-        
-        for key, mapping in self.inference_map.items():
-            keys = key if isinstance(key, tuple) else (key,)  # Ensure keys is always iterable
 
+        for key, metadata in self.inference_metadata.items():
+            keys = eval(key) if key.startswith("(") else (key,)  # Convert tuple keys from string back to tuple
+            
             collected_inputs = []
             for k in keys:
                 if k in intermediate_outputs:
@@ -23,8 +43,9 @@ class MultimodalModel(nn.Module):
                 else:
                     raise KeyError(f"Missing key '{k}' in inputs or intermediate_outputs")
 
-            output = mapping['forward_model'](collected_inputs)
-            intermediate_outputs[mapping['output_field']] = output
+            # Run forward pass using registered nn.Module
+            output = self.inference_map[key](collected_inputs if len(collected_inputs) > 1 else collected_inputs[0])
+            intermediate_outputs[metadata['output_field']] = output
 
         return intermediate_outputs
 
@@ -44,7 +65,7 @@ def main(config):
         ('merlin/image', 'merlin/text'): {'output_field': 'ckd_prediction', 'compress': False, 'forward_model': lambda x: linear_model(x)}
     }
 
-    multimodal_model = MultimodalModel(config, inference_map)
+    # multimodal_model = MultimodalModel(config, inference_map)
 
 if __name__ == "__main__":
     main()

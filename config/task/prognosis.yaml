@@ -1,7 +1,6 @@
 wandb_group: LinearEvaluation
 
-outputs: ['ckd']
-# outputs: ['ost']
+outputs: ['ost']
 # outputs: ['htn']
 # outputs: ['ckd', 'ost', 'htn', 'ihd', 'dm', 'cvd']
 

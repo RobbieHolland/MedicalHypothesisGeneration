@@ -1,8 +1,9 @@
-from contrastive_3d.datasets import monai_datalists, monai_transforms, dataset_configs, dataloaders
+from contrastive_3d.datasets import monai_datalists, monai_transforms, dataloaders
 from contrastive_3d.datasets.dataloaders import CTPersistentDataset
 from monai.data import DataLoader
 from torch.utils.data import Dataset
 import pandas as pd
+from Data.raw_database.dataset_configs import  get_dataset_config
 
 import os
 
@@ -21,23 +22,31 @@ class MultimodalCTDataset(Dataset):
             self.filter()
 
     def __len__(self):
-        return len(self.original_dataset)
+        return len(self.dataset)
+    
+    # def __getitem__(self, idx, input_keys, output_keys):
+    #     return self.input_row[idx], self.output_row[idx]
 
     def __getitem__(self, idx, input_keys, output_keys):
-        sample = self.dataset.loc[idx]
+        # sample = self.dataset.loc[idx]
 
         # Load image & existing metadata using the original dataset
-        original_dataset_index = self.original_dataset_indexing.index[self.original_dataset_indexing[self.primary_key] == sample[self.primary_key]][0]
-        raw_data = self.original_dataset.__getitem__(original_dataset_index)
-        assert raw_data[self.primary_key] == sample[self.primary_key]
+        # all_data = {}
+
+        # if any([k not in self.dataset.columns for k in input_keys]):
+        #     original_dataset_index = self.original_dataset_indexing.index[self.original_dataset_indexing[self.primary_key] == sample[self.primary_key]][0]
+        #     raw_data = self.original_dataset.__getitem__(original_dataset_index)
+        #     assert raw_data[self.primary_key] == sample[self.primary_key]
+        #     all_data.update(raw_data)
 
         # Combine return data
-        raw_data.update(sample.loc[[i for i in sample.index if i not in raw_data.keys()]].to_dict())
-        input_row = {k: raw_data[k] for k in input_keys}
-        output_row = sample[output_keys].to_dict()
+        # all_data.update(sample.loc[[i for i in sample.index if i not in all_data.keys()]].to_dict())
+
+        # input_row = {k: all_data[k] for k in input_keys}
+        # output_row = sample[output_keys].to_dict()
         
-        # return dict(zip(self.input_keys, input_row)), dict(zip(self.output_keys, output_row))
-        return input_row, output_row
+        return self.dataset.loc[idx, input_keys].tolist(), self.dataset.loc[idx, output_keys].tolist()
+        # return input_row, output_row
 
     def filter(self):
         if self.config.task.output_filter:
@@ -60,7 +69,7 @@ class FilteredDataset(CTPersistentDataset):
 
 def get_dataloaders(hydra_config, config, train_files=None, val_files=None, test_files=None, include=('train', 'validation', 'test'), output_filter=None):
     try:
-        dataset_config = dataset_configs.get_dataset_config(config["dataset"])
+        dataset_config = get_dataset_config(config["dataset"])
         transforms = dataset_config.transforms
         cache_dir = dataset_config.cache_dir
     except:
