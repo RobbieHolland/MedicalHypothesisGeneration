@@ -3,6 +3,33 @@ import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from Model.concept_model import ConceptModel
 
+# Image Encoder Model
+class ImageEncoder(nn.Module):
+    def __init__(self, compression_model):
+        super().__init__()
+        self.model = compression_model
+
+    def forward(self, image_list):
+        return self.model.latent(torch.cat(image_list, dim=0))
+
+# Text Encoder Model
+class TextEncoder(nn.Module):
+    def __init__(self, compression_model):
+        super().__init__()
+        self.model = compression_model
+
+    def forward(self, text_embeddings):
+        return self.model.model.encode_text(text_embeddings)
+
+# OST Model for Prediction
+class OSTModel(nn.Module):
+    def __init__(self, linear_model):
+        super().__init__()
+        self.model = linear_model
+
+    def forward(self, inputs):
+        return self.model(inputs)
+
 class MerlinWrapper(ConceptModel):
     def __init__(self, config):
         super().__init__(config)

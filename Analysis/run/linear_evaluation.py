@@ -33,6 +33,7 @@ class LinearEvaluation(TrainableSave):
         self.auc_metrics = {
             phase: AUROC(task="multilabel", num_labels=self.num_heads) for phase in ["train", "validation", "test"]
         }
+        self.max_validation_auc = 0
 
     def forward(self, x):
         return self.model(x)['prediction']
@@ -85,7 +86,10 @@ class LinearEvaluation(TrainableSave):
         self._epoch_metrics("train")
 
     def on_validation_epoch_end(self):
-        self._epoch_metrics("validation")
+        auc_val = self._epoch_metrics("validation")
+        self.max_validation_auc = max(self.max_validation_auc, auc_val.item())
+        self.log(f"{'validation'}_max_auc_epoch", self.max_validation_auc, prog_bar=True, logger=True)
+        wandb.log({f"{'validation'}_max_auc_epoch": self.max_validation_auc}, step=self.global_step)
 
     def on_test_epoch_end(self):
         self._epoch_metrics("test")
@@ -142,8 +146,9 @@ def run(config):
     # datasets, dataloaders = get_data(config, splits=['validation'])
     
     # Load model to evaluate
-    from Model.get_model import get_model
-    model = get_model(config, device=device)
+    from Model.get_model import ModelBuilder
+
+    model = ModelBuilder(config).get_model()
     
     keys_to_remove = [k for k in model.inference_map.keys() if model.inference_metadata[k]['compress']]
 
@@ -160,6 +165,9 @@ def run(config):
             self.classifier = nn.Linear(config.data.latent_dim, self.num_heads)
 
         def forward(self, z):
+            z = torch.cat(z)
+            if not z.is_floating_point():
+                z = z.float()
             return self.classifier(z)
         
     classifier_module = ClassifierModel()

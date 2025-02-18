@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import wandb
 from util.plotting import savefig
+import yaml
 
 class Figures:
     def __init__(self, config):
@@ -34,14 +35,19 @@ class Figures:
 
         # Assuming df has columns: 'task.outputs', 'data', 'config.outcome'
         df['task.outputs'] = df['task.outputs'].apply(lambda l: l[0])
-        # best_runs = df.loc[df.groupby("task.lr")["validation_auc_epoch"].idxmax()]
-        best_runs = df.loc[df['task.lr'] == 0.0005]
+        df = df.loc[~df['validation_max_auc_epoch'].isna()]
+        best_runs = df.loc[df.groupby(['task.outputs', 'data'])["validation_max_auc_epoch"].idxmax()]
+        # best_runs = df.loc[df['task.lr'] == 0.0005]
+
+        with open("Analysis/slurm/sweep/linear_evaluation.yaml", "r") as file:
+            sweep_config = yaml.safe_load(file)
+        output_order = [o[0] for o in sweep_config['parameters']['task.outputs']['values']]
 
         heatmap_data = best_runs.pivot(index='task.outputs', columns='data', values=config.task.outcome)
-        heatmap_data = heatmap_data.reindex(columns=config.task.data_order)
+        heatmap_data = heatmap_data.reindex(output_order, columns=config.task.data_order)
 
         # Plot heatmap
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(10, 1 * len(heatmap_data)))
         sns.heatmap(heatmap_data, annot=True, cmap="viridis", fmt=".2f", linewidths=0.5)
 
         # Labels

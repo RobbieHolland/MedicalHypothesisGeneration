@@ -43,7 +43,7 @@ class MultimodalModel(nn.Module):
                     raise KeyError(f"Missing key '{k}' in inputs or intermediate_outputs")
 
             # Run forward pass using registered nn.Module
-            output = self.inference_map[key](collected_inputs if len(collected_inputs) > 1 else collected_inputs[0])
+            output = self.inference_map[key](collected_inputs)
             intermediate_outputs[metadata['output_field']] = output
 
         return intermediate_outputs

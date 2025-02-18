@@ -18,12 +18,15 @@ def load_abdominal_ct_labels(config):
     labels_df = labels_df.reset_index()
     # merlin_datasets, _ = create_dataloaders(config)
 
-    # phecode_findings_metadata = pd.read_csv(config.paths.abdominal_phecode_labels)
+    phecode_findings_metadata = pd.read_csv(config.paths.abdominal_phecode_labels)
+    phecodes = phecode_findings_metadata.columns[1:1693]
+    phecode_findings_metadata['phecodes'] = phecode_findings_metadata.loc[:, phecodes].apply(lambda row: np.array(row), axis=1)
+    phecode_findings_metadata = phecode_findings_metadata.drop(columns=phecodes)
 
-    # diagnosis_metadata = pd.read_csv(config.paths.thirty_diagnosis_labels)
+    diagnosis_metadata = pd.read_csv(config.paths.thirty_diagnosis_labels)
 
-    # labels_df = left_merge_new_fields(labels_df, phecode_findings_metadata, 'anon_accession')
-    # labels_df = left_merge_new_fields(labels_df, diagnosis_metadata, 'anon_accession')
+    labels_df = left_merge_new_fields(labels_df, phecode_findings_metadata, 'anon_accession')
+    labels_df = left_merge_new_fields(labels_df, diagnosis_metadata, 'anon_accession')
 
     return labels_df
 
@@ -54,8 +57,8 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'])
 
     if data_type == 'multimodal_abdominal_ct':
         config = config.copy()
-        from Model.get_model import get_model
-        model = get_model(config)
+        from Model.get_model import ModelBuilder
+        model = ModelBuilder(config).get_model()
 
         labels_df = load_abdominal_ct_labels(config)
 
