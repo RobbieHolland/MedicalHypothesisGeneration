@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 class CompressedMultimodalDataset(pl.LightningModule):
-    def __init__(self, config, dataset, model, split, batch_size=224):
+    def __init__(self, config, dataset, model, split):
         """
         Args:
             config: Configuration object.
@@ -21,8 +21,8 @@ class CompressedMultimodalDataset(pl.LightningModule):
         super().__init__()
         self.config = config
         self.split = split
-        self.batch_size = batch_size
-        self.model = model
+        self.batch_size = config.task.batch_size
+        self.model = model.eval()
 
         self.input_keys = config.data.inputs
         self.output_keys = config.task.outputs
@@ -31,17 +31,22 @@ class CompressedMultimodalDataset(pl.LightningModule):
 
         # Set up DataLoader
         self.dataloader = DataLoader(
-            self.dataset,
+            self,
             batch_size=self.batch_size,
             shuffle=False,
-            collate_fn=self.custom_collate,
+            # collate_fn=self.custom_collate,
         )
-        
+
+        self.set_vectorized_data()
+
         # Load or compute compressed embeddings
         self._apply_cached_compression()
 
         self.dataset.filter()
 
+        self.set_vectorized_data()
+
+    def set_vectorized_data(self):
         self.vectorized_inputs = self.dataset.dataset[self.input_keys].to_dict('records')
         self.vectorized_outputs = self.dataset.dataset[self.output_keys].to_dict('records')
 
@@ -55,7 +60,7 @@ class CompressedMultimodalDataset(pl.LightningModule):
         # all_data = {}
 
         if any([k not in self.dataset.dataset.columns for k in self.input_keys]):
-            raise NotImplementedError("Keys not in metadata must query raw dataset")
+            raise NotImplementedError("Any keys not in metadata must instead query raw dataset")
         
         return self.vectorized_inputs[idx], self.vectorized_outputs[idx]
 
@@ -91,12 +96,30 @@ class CompressedMultimodalDataset(pl.LightningModule):
 
                 if os.path.exists(cache_path):
                     print(f"Loading cached embeddings for {field} from {cache_path}")
-                    compressed_values = torch.load(cache_path)
+                    compressed_values = torch.load(cache_path, weights_only=False)
 
                 else:
                     print(f"Computing embeddings for {field}")
-                    compressed_values = extract_vectors_for_split(self.config, self.dataloader, inference_model, self.input_keys.index(field), ['anon_accession'])
-                    compressed_values = {k: torch.stack(v) for (k, v) in compressed_values.items()}
+                    self.output_keys.append('anon_accession')
+                    self.set_vectorized_data()
+
+                    compressed_values = extract_vectors_for_split(self.config, self.dataloader, inference_model, field, ['anon_accession'])
+                    self.output_keys.pop(-1)
+                    self.set_vectorized_data()
+
+                    def process_values(v):
+                        if all(isinstance(x, torch.Tensor) for x in v):
+                            return torch.stack(v)  # Stack tensors
+                        elif all(isinstance(x, np.ndarray) for x in v):
+                            return torch.stack([torch.tensor(x) for x in v])  # Convert NumPy arrays & stack
+                        elif all(isinstance(x, str) for x in v):
+                            return v  # Keep strings as lists
+                        else:
+                            return v  # Mixed types, leave as is
+
+                    compressed_values = {k: process_values(v) for k, v in compressed_values.items()}
+
+                    # compressed_values = {k: torch.stack(v) for (k, v) in compressed_values.items()}
 
                     torch.save(compressed_values, cache_path)
                     print(f"Saved embeddings to {cache_path}")
@@ -104,9 +127,13 @@ class CompressedMultimodalDataset(pl.LightningModule):
                 stored_embedding_name = "output" if "output" in compressed_values else "vectors"
                 compressed_values[compressed_field_name] = list(np.array(torch.Tensor(compressed_values[stored_embedding_name])))
                 compressed_values.pop(stored_embedding_name)
+
+                new_data = pd.DataFrame(compressed_values)
+                if 'sample_ids' in new_data.columns:
+                    new_data['anon_accession'] = new_data['sample_ids']
                 
                 # self.dataset.dataset[compressed_field_name] = list(np.array(torch.Tensor(compressed_values["output" if "output" in compressed_values else "vectors"])))
-                self.dataset.dataset = self.dataset.dataset.merge(pd.DataFrame(compressed_values), how='left', left_on='anon_accession', right_on='sample_ids')
+                self.dataset.dataset = self.dataset.dataset.merge(pd.DataFrame(compressed_values), how='left', on='anon_accession')
 
                 self.input_keys[self.input_keys.index(field)] = compressed_field_name
                 # self.inference_map.pop(field, None)

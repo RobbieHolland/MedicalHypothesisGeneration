@@ -115,7 +115,7 @@ class CompressedEmbeddingDataset(EmbeddingDataset):
             if os.path.exists(cache_path):
                 # Load cached embeddings
                 print(f"Loading cached embeddings from {cache_path}")
-                compressed_values = torch.load(cache_path)
+                compressed_values = torch.load(cache_path, weights_only=False)
             else:
                 # Compute embeddings and save them
                 print(f"Computing embeddings for {input_field}")

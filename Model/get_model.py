@@ -1,29 +1,26 @@
+import torch
 import os
 from Model.model import load_model
 from Model.identity import IdentityModel
 from Model.merlin_wrapper import ImageEncoder, TextEncoder
-import torch
-import torch
-import torch.nn as nn
 from Model.multimodal_model import MultimodalModel
-from Analysis.run.linear_evaluation import LinearEvaluation
+from Model.ct_fm_segresnet import load_ct_fm
 
 class ModelBuilder():
-    def __init__(self, config):
+    def __init__(self, config, device=None):
         self.config = config
-        self.device = torch.device('cuda:0')
-        self.compression_model = load_model(config).to(self.device)
+        self.compression_model = load_model(config)
+        self.device = device
+        
+        if device:
+            self.compression_model = self.compression_model.to(self.device)
 
-    def get_multimodal_merlin(self):
-        # Load Linear Model
-        # linear_model_path = '/dataNAS/people/rholland/MedicalHypothesisGeneration/pretrained_models/MedicalHypothesisGeneration-Analysis_run/LinearEvaluation/t3qho6x5/abdominal_ct_text_embeddings/ost/dark-sweep-32/epoch=23-step=504.ckpt'
-        # linear_model = LinearEvaluation.load_from_checkpoint(linear_model_path).to(device)
-
+    def get_configured_model(self):
         # Define inference map with proper nn.Modules
         inference_map = {}
         for input_field, forward_configuration in self.config.data.inference_map.items():
             inference_map[input_field] = {
-                'forward_model': self.get_model(forward_configuration.forward_model),
+                'forward_model': self.get_model(forward_configuration.forward_model).to(self.device),
                 'compress': forward_configuration.compress,
                 'output_field': forward_configuration.output_field,
             }
@@ -34,10 +31,13 @@ class ModelBuilder():
         
         return model
 
-    def get_model(self, specific_model_name=None, device=None):
+    def get_model(self, specific_model_name=None):
         model_name = self.config.model_name if not specific_model_name else specific_model_name
 
-        if model_name == 'merlin':
+        if model_name == 'ct_fm_image_encoder':
+            model = load_ct_fm(self.config)
+
+        elif model_name == 'merlin':
             model = load_model(self.config)
 
         elif model_name == 'merlin_image_encoder':
@@ -52,14 +52,14 @@ class ModelBuilder():
         elif model_name == 'identity':
             return IdentityModel(self.config)
         
-        elif model_name == 'multimodal_merlin':
-            model = self.get_multimodal_merlin()
+        elif model_name == 'configured_model':
+            model = self.get_configured_model()
 
         else:
             raise ValueError(f"Unknown model name: {model_name}")
 
-        if device:
-            model = model.to(device)
+        if self.device:
+            model = model.to(self.device)
 
         return model
 

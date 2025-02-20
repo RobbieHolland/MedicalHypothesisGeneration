@@ -4,7 +4,7 @@ defaults:
   - multimodal_pretraining: default
   - sparse_autoencoder: basic
   - data: abdominal_ct
-  - task: build_vector_database
+  - task: prognosis
 
 wandb_api_token: ${paths.wandb_api_token}
 wandb_project: 'MultimodalMedicalHG'

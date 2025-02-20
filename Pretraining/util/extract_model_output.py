@@ -43,7 +43,10 @@ def extract_vectors_for_split(config, dataloader, model, input_field, fields):
     # Create a Trainer for embedding extraction
     trainer = Trainer(
         accelerator="gpu",  # Use GPU if available
-        devices=1 if torch.cuda.is_available() else None,
+        # accelerator="cpu",
+        devices=1,
+        # devices='cpu',
+        # devices=1 if torch.cuda.is_available() else None,
         callbacks=[EmbeddingExtractionCallback(all_fields, fields)],
         limit_test_batches=config.task.max_steps,
     )

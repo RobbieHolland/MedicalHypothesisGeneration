@@ -1,5 +1,7 @@
 # wandb_sweep_id: t3qho6x5
-wandb_sweep_id: hzirxies
+# wandb_sweep_id: hzirxies
+wandb_sweep_id: qc5mf7wa
+
 
 outcome: 'test_auc_epoch'
 

@@ -4,7 +4,6 @@ from torch import nn
 import sys
 from transformers import AutoModel, AutoTokenizer, AutoModelForMaskedLM
 from torchvision import transforms
-from peft import LoraConfig, get_peft_model
 import torchvision
 import copy
 from torch.nn import Parameter

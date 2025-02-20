@@ -37,7 +37,7 @@ def load_merlin_embeddings_and_labels(config, model_field_pairs=[]):
 
     datasets = {}
     for split in ["train", "validation", "test"]:
-        embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"))
+        embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"), weights_only=False)
         df = pd.DataFrame({
             "sample_ids": embedding_data['sample_ids'],
             "vectors": list(embedding_data["vectors"].detach().cpu().numpy())
@@ -52,13 +52,13 @@ def load_merlin_embeddings_and_labels(config, model_field_pairs=[]):
     return datasets
 
 
-def get_data(config, specific_data=None, splits=['train', 'validation', 'test']):
+def get_data(config, specific_data=None, splits=['train', 'validation', 'test'], device=None):
     data_type = config.data.type if not specific_data else specific_data
 
     if data_type == 'multimodal_abdominal_ct':
         config = config.copy()
         from Model.get_model import ModelBuilder
-        model = ModelBuilder(config).get_model()
+        model = ModelBuilder(config, device=device).get_model()
 
         labels_df = load_abdominal_ct_labels(config)
 
@@ -83,7 +83,7 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'])
             # Temporary other dataset
             # original_dataset = raw_dl[split].dataset
             vector_db_path = os.path.join(config.base_dir, config.data.vector_database_in)
-            embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"))
+            embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"), weights_only=False)
             df = pd.DataFrame({
                 "sample_ids": embedding_data['sample_ids'],
                 "vectors": list(embedding_data["vectors"].detach().cpu().numpy())
@@ -123,7 +123,7 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'])
 
         datasets = {}
         for split in ["train", "validation", "test"]:
-            embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"))
+            embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"), weights_only=False)
             df = pd.DataFrame({
                 "sample_ids": embedding_data['sample_ids'],
                 "vectors": list(embedding_data["vectors"].detach().cpu().numpy())

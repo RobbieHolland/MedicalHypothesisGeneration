@@ -139,10 +139,11 @@ def run(config):
     from util.wandb import init_wandb
     init_wandb(config)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cpu')
 
     # Load dataloaders
     from Data.get_data import get_data
-    datasets, dataloaders = get_data(config)
+    datasets, dataloaders = get_data(config, device=device)
     # datasets, dataloaders = get_data(config, splits=['validation'])
     
     # Load model to evaluate
