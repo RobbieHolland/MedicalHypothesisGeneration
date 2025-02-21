@@ -80,20 +80,7 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'],
         for split in splits:
             ds_config = config.copy()
 
-            # Temporary other dataset
-            # original_dataset = raw_dl[split].dataset
-            vector_db_path = os.path.join(config.base_dir, config.data.vector_database_in)
-            embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"), weights_only=False)
-            df = pd.DataFrame({
-                "sample_ids": embedding_data['sample_ids'],
-                "vectors": list(embedding_data["vectors"].detach().cpu().numpy())
-            })
-            original_dataset = df
-            original_dataset['anon_accession'] = original_dataset['sample_ids']
-
-            original_dataset = original_dataset.merge(pd.DataFrame(raw_dl[split].dataset.data), how='left', on='anon_accession')
-
-            raw_dataset = MultimodalCTDataset(ds_config, original_dataset, labels_df, autofilter=False)
+            raw_dataset = MultimodalCTDataset(ds_config, labels_df, raw_dl[split], split, autofilter=False)
 
             # Create dataset which compresses/loads using inference map, and also updates inference map
             datasets[split] = CompressedMultimodalDataset(ds_config, raw_dataset, model, split=split)
@@ -108,40 +95,6 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'],
                 # collate_fn=datasets[split].custom_collate
             )
         x = 3
-
-    elif data_type == 'abdominal_ct_embeddings':
-        # Usage:
-        vector_db_path = os.path.join(config.base_dir, config.data.vector_database_in)
-        labels_path = config.paths.five_year_prognosis_labels
-        labels_df = pd.read_csv(labels_path).set_index("anon_accession")
-        labels_df = labels_df.drop_duplicates()
-        labels_df = labels_df.reset_index()
-        # merlin_datasets, _ = create_dataloaders(config)
-
-        phecode_findings_metadata = pd.read_csv(config.paths.abdominal_phecode_labels)
-        labels_df = labels_df.merge(phecode_findings_metadata, on='anon_accession', how='left')
-
-        datasets = {}
-        for split in ["train", "validation", "test"]:
-            embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"), weights_only=False)
-            df = pd.DataFrame({
-                "sample_ids": embedding_data['sample_ids'],
-                "vectors": list(embedding_data["vectors"].detach().cpu().numpy())
-            })
-            merged_df = df.merge(labels_df, left_on="sample_ids", right_on="anon_accession", how="left")
-            merged_df = merged_df.reset_index(drop=True)
-
-            # Create datasets for each split
-            datasets[split] = CompressedEmbeddingDataset(config.copy(), merged_df, [], split=split)
-
-            # datasets[split] = EmbeddingDataset(config, merged_df)
-
-        activation_data_module = EmbeddingDataModule(config, datasets)
-        dataloaders = {
-            'train': activation_data_module.train_dataloader(),
-            'validation': activation_data_module.val_dataloader(),
-            'test': activation_data_module.test_dataloader(),
-        }
 
     else:
         raise ValueError(f"Unknown data name: {data_type}")

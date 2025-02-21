@@ -62,7 +62,20 @@ class CompressedMultimodalDataset(pl.LightningModule):
         if any([k not in self.dataset.dataset.columns for k in self.input_keys]):
             raise NotImplementedError("Any keys not in metadata must instead query raw dataset")
         
-        return self.vectorized_inputs[idx], self.vectorized_outputs[idx]
+        inputs = self.vectorized_inputs[idx]
+        outputs = self.vectorized_outputs[idx]
+
+        if any([k in self.dataset.original_dataset.columns for k in self.input_keys]):
+            index = self.dataset.original_dataset[
+                self.dataset.original_dataset['anon_accession'] == self.dataset.dataset.loc[idx, 'anon_accession']
+            ].index
+            raw_data = self.dataset.raw_dl.dataset.__getitem__(index.item())
+            raw_inputs = {k: v for (k, v) in raw_data.items() if k in self.input_keys}
+            raw_outputs = {k: v for (k, v) in raw_data.items() if k in self.output_keys}
+            inputs.update(raw_inputs)
+            outputs.update(raw_outputs)
+
+        return inputs, outputs
 
         # if any([k not in self.dataset.columns for k in input_keys]):
         #     original_dataset_index = self.original_dataset_indexing.index[self.original_dataset_indexing[self.primary_key] == sample[self.primary_key]][0]
@@ -133,7 +146,7 @@ class CompressedMultimodalDataset(pl.LightningModule):
                     new_data['anon_accession'] = new_data['sample_ids']
                 
                 # self.dataset.dataset[compressed_field_name] = list(np.array(torch.Tensor(compressed_values["output" if "output" in compressed_values else "vectors"])))
-                self.dataset.dataset = self.dataset.dataset.merge(pd.DataFrame(compressed_values), how='left', on='anon_accession')
+                self.dataset.dataset = self.dataset.dataset.merge(new_data, how='left', on='anon_accession')
 
                 self.input_keys[self.input_keys.index(field)] = compressed_field_name
                 # self.inference_map.pop(field, None)

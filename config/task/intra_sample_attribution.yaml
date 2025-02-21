@@ -1,4 +1,4 @@
-outputs: ['ost']
+outputs: ['aortic_valve_calcification']
 # outputs: ['ost']
 # outputs: ['htn']
 # outputs: ['ckd', 'ost', 'htn', 'ihd', 'dm', 'cvd']
@@ -6,3 +6,7 @@ outputs: ['ost']
 output_filter: [0, 1]
 
 batch_size: 2
+num_outs: 1
+
+
+predictor_path: MultimodalMedicalHG/LinearEvaluation/no_sweep/multimodal_abdominal_ct_image_text/

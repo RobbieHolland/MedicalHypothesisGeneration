@@ -1,6 +1,5 @@
 import torch
 import hydra
-from Model.get_model import get_model
 from Data.get_data import get_data
 from Analysis.run.linear_evaluation import LinearEvaluation
 from torch.cuda.amp import autocast
@@ -8,23 +7,105 @@ import pandas as pd
 import numpy as np
 import os
 import random
+from Analysis.run.linear_evaluation import ClassifierModel
+import torch.nn as nn
+import torch
+import torch.nn as nn
+import numpy as np
+import os
+from torch.cuda.amp import autocast
+from tqdm import tqdm
+from itertools import product
+import glob
 
 torch.utils.checkpoint.checkpoint = lambda func, *args, **kwargs: func(*args, **kwargs)
 
-
 class AttributionVisualizer:
-    def __init__(self, model, device, base_dir, task_output, threshold, folder_name='feature_attribution'):
+    def __init__(self, config, model, device, threshold, folder_name='feature_attribution'):
+        self.config = config
         self.model = model.eval().to(device)
         self.device = device
-        self.compression_model = self.model.models['merlin'].eval().to(device)
-        self.tokenizer = self.compression_model.model.encode_text.tokenizer
+        self.model = model
+        self.tokenizer = self.model.inference_map['findings'].model.model.encode_text.tokenizer
 
-        analysis_dir = os.path.join(base_dir, 'Analysis/output')
-        self.output_dir = os.path.join(analysis_dir, folder_name, task_output, f">={threshold}")
-        print(f"Saving to {self.output_dir}")
+        analysis_dir = os.path.join(config.base_dir, 'Analysis/output')
+        self.output_dir = os.path.join(analysis_dir, folder_name, config.task.outputs[0], f">={threshold}")
+        print(f"Saving to ------------> {self.output_dir}")
         os.makedirs(self.output_dir, exist_ok=True)
+    
+    def occlude(self, data, occlusion_size, step_size):
+        """Generic occlusion function for both 1D (text) and 3D (image) inputs."""
+        shape = data.shape
+        occlusions = []
+        
+        # Generate step indices for all occludable dimensions
+        step_ranges = [range(0, s, step_size) for s in shape[1:]]  # Skip batch dim
 
-    def run_sample(self, inputs, outputs, sample_ix, outcome):
+        for index in product(*step_ranges):  # Cartesian product to iterate correctly
+            occluded = data.clone()
+            
+            # Build slices dynamically
+            slices = (slice(None),) + tuple(slice(max(0, i - occlusion_size // 2), 
+                                     min(i - occlusion_size // 2 + occlusion_size, s)) 
+                                for i, s in zip(index, shape[1:]))
+
+            occluded[slices] = 0 if data.ndimension() > 2 else self.tokenizer.pad_token_id
+            occlusions.append((occluded, index))
+
+        return occlusions
+
+    def run_occlusion(self, inputs, outputs, sample_ix):
+        sample_output_dir = os.path.join(self.output_dir, str(sample_ix))
+        os.makedirs(sample_output_dir, exist_ok=True)
+        
+        inputs['image'] = torch.Tensor(inputs['image']).unsqueeze(0).to(self.device)
+        encoded = self.tokenizer(inputs['findings'].lower(), return_tensors="pt", padding=True, truncation=True).to(self.device)
+        
+        occlusion_size_image = 48  # Can be adapted dynamically
+        occlusion_step_image = 24
+        occlusion_size_text = 4
+        occlussion_step_text = 2
+        
+        image_occlusions = self.occlude(inputs['image'], occlusion_size_image, step_size=occlusion_step_image)
+        text_occlusions = self.occlude(encoded["input_ids"], occlusion_size_text, step_size=occlussion_step_text)
+        
+        image_attributions = torch.zeros_like(inputs['image'])
+        text_attributions = torch.zeros_like(encoded['input_ids'].float())
+        
+        prediction_class = int(outputs[self.config.task.outputs[0]])
+        original_output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
+        
+        for occluded_image, index in image_occlusions:
+            inputs['image'] = occluded_image.to(self.device)
+            output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
+            diff = (original_output - output).square().sum()
+
+            slices = (slice(None),) * (len(inputs['image'].shape) - len(index)) + tuple(
+                slice(i, min(i + occlusion_size_image, s)) for i, s in zip(index, inputs['image'].shape[-len(index):])
+            )
+            image_attributions[slices] += diff
+        
+        for occluded_tokens, index in text_occlusions:
+            encoded['input_ids'] = occluded_tokens
+            inputs['findings'] = self.tokenizer.decode(occluded_tokens[0])
+            output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
+            diff = (original_output - output).square().sum()
+
+            slices = (slice(None),) * (len(encoded['input_ids'].shape) - len(index)) + tuple(
+                slice(i, min(i + occlusion_size_text, s)) for i, s in zip(index, encoded['input_ids'].shape[-len(index):])
+            )
+            text_attributions[slices] += diff
+
+        image_attributions = image_attributions.detach().cpu()
+        text_attributions = text_attributions.detach().cpu()
+        
+        inputs["image"] = inputs["image"].cpu()
+        self.visualize_attribution(
+            inputs, sample_ix, self.tokenizer.convert_ids_to_tokens(encoded["input_ids"][0]),
+            image_attributions, text_attributions, sample_output_dir
+        )
+
+    def run_input_x_gradient(self, inputs, outputs, sample_ix):
         sample_output_dir = os.path.join(self.output_dir, str(sample_ix))
         os.makedirs(sample_output_dir, exist_ok=True)
 
@@ -43,17 +124,18 @@ class AttributionVisualizer:
                     gradients[name] = grad_outp[0]
                 return hook
 
-            embedding_layer = self.compression_model.model.encode_text.text_encoder.embeddings.word_embeddings
+            embedding_layer = self.model.inference_map['findings'].model.model.encode_text.text_encoder.embeddings.word_embeddings
             embedding_handle = embedding_layer.register_forward_hook(save_activation("embedding"))
             embedding_grad_handle = embedding_layer.register_backward_hook(save_gradient("embedding"))
 
             inputs["image"].requires_grad = True
             image_hook_handle = inputs["image"].register_hook(lambda grad: gradients.setdefault("image", grad))
 
-            output = self.model(inputs)['ost_prediction']
-            criterion = self.model.models['linear'].criterion
-            target = torch.Tensor([[1 - outputs['ost'], outputs['ost']]]).to(output.device)
+            output = self.model(inputs)['prediction']
+            criterion = nn.BCEWithLogitsLoss()
+            target = torch.Tensor([[1 - outputs[self.config.task.outputs[0]], outputs[self.config.task.outputs[0]]]]).to(output.device)
             loss = criterion(output, target)
+            print(output, target)
             loss.backward()
 
             encoded = self.tokenizer(inputs['findings'].lower(), return_tensors="pt", padding=True, truncation=True)
@@ -72,19 +154,19 @@ class AttributionVisualizer:
 
         inputs["image"] = inputs["image"].cpu()
         self.visualize_attribution(
-            inputs, sample_ix, outcome, tokens,
+            inputs, sample_ix, tokens,
             image_attributions, findings_attributions, sample_output_dir
         )
 
-    def visualize_attribution(self, inputs, sample_ix, output, tokens, image_attributions, findings_attributions, output_dir):
+    def visualize_attribution(self, inputs, sample_ix, tokens, image_attributions, findings_attributions, output_dir):
         import html, base64, io
         from PIL import Image
 
-        title = f"Patient {sample_ix} findings importance for {output}"
+        title = f"Patient {sample_ix} findings importance for {self.config.task.outputs[0]}"
 
         attr_vals = findings_attributions[0].cpu().numpy()
         max_abs = np.abs(attr_vals).max() or 1
-        alpha_min, alpha_max = 0.2, 0.8
+        alpha_min, alpha_max = 0.0, 0.8
 
         def styled_token(token, val):
             token_text = html.escape(token.replace("Ġ", ""))
@@ -97,15 +179,15 @@ class AttributionVisualizer:
         main_body = " ".join(html_tokens)
 
         indices = np.arange(len(attr_vals))
-        top5_pos = sorted(indices[attr_vals > 0], key=lambda i: attr_vals[i], reverse=True)[:5]
-        top5_neg = sorted(indices[attr_vals < 0], key=lambda i: attr_vals[i])[:5]
+        top5_pos = sorted(indices[attr_vals > 0], key=lambda i: attr_vals[i], reverse=True)[:10]
+        top5_neg = sorted(indices[attr_vals < 0], key=lambda i: attr_vals[i])[:10]
 
         top_pos_list = "<ol>" + "".join(f"<li>{styled_token(tokens[i], attr_vals[i])}</li>" for i in top5_pos) + "</ol>"
         top_neg_list = "<ol>" + "".join(f"<li>{styled_token(tokens[i], attr_vals[i])}</li>" for i in top5_neg) + "</ol>"
 
         text_html_content = main_body + (
-            "<hr><h2>Top 5 Positive Firing Tokens</h2>" + top_pos_list +
-            "<h2>Top 5 Negative Firing Tokens</h2>" + top_neg_list
+            "<hr><h2>Top 10 Positive Firing Tokens</h2>" + top_pos_list +
+            "<h2>Top 10 Negative Firing Tokens</h2>" + top_neg_list
         )
 
         ct_volume = inputs["image"].detach().squeeze().numpy()  # shape: (D, H, W)
@@ -113,7 +195,16 @@ class AttributionVisualizer:
 
         # slice_importance = np.abs(ct_attributions).sum((0, 1))
         # top4_indices = np.argsort(slice_importance)[-4:]
-        top4_indices = np.argsort(ct_attributions.max(axis=(0, 1)))[::-1][:4]  # Sort in descending order
+        # top4_indices = np.argsort(ct_attributions.max(axis=(0, 1)))[::-1][:4]  # Sort in descending order
+
+        tol = 1e-8
+        max_attributions = ct_attributions.max(axis=(0, 1))
+        max_value = max_attributions.max()
+        close_to_max = np.where(max_attributions >= max_value - tol)[0]
+
+        top4_indices = (close_to_max[np.linspace(0, len(close_to_max) - 1, 4, dtype=int)]
+                        if len(close_to_max) > 4 
+                        else np.argsort(max_attributions)[::-1][:4])
 
         def generate_overlay_image(ct_slice, attrib_slice, alpha_min=0.0, alpha_max=0.7):
             ct_min, ct_max = ct_slice.min(), ct_slice.max()
@@ -200,6 +291,8 @@ class AttributionVisualizer:
         with open(os.path.join(output_dir, "colored_text.html"), "w") as f:
             f.write(html_text)
 
+        print(f'Visualization written to {output_dir}')
+
 
 @hydra.main(config_path="../../config", config_name="default", version_base=None)
 def main(config):
@@ -207,14 +300,47 @@ def main(config):
     np.random.seed(config.seed)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    datasets, dataloaders = get_data(config, splits=['validation'])
-    model = get_model(config)
-    model.inference_map = {k: v for k, v in model.inference_map.items() if not v['compress']}
-    model = model.eval().to(device)
+    datasets, dataloaders = get_data(config, device=device, splits=['validation'])
+    
+    from Model.get_model import ModelBuilder
+    model = ModelBuilder(config).get_model()
+    model = model.eval()
+
+    keys_to_remove = [k for k in model.inference_map.keys() if model.inference_metadata[k]['compress']]
+
+    for k in keys_to_remove:
+        del model.inference_map[k]
+        del model.inference_metadata[k]  # Ensure metadata is also removed
+
+    classifier_module = ClassifierModel(config)
+    for param in classifier_module.parameters():
+        param.requires_grad = True
+
+    classifier_module = classifier_module.to(device)
+
+    model.update_inference_map('multimodal_embedding', classifier_module, 'prediction', False)
+
+    # Load the checkpoint's state dict
+    ckpt_files = glob.glob(os.path.join(config.pretrained_model_dir, config.task.predictor_path, 
+                                        config.task.outputs[0], '**/*.ckpt'), recursive=True)
+    latest_linear_ckpt = max(ckpt_files, key=os.path.getctime) if ckpt_files else None
+    print(f'Checkpoint files, taking latest of them: {ckpt_files} which was:\n{latest_linear_ckpt}')
+
+    ckpt_state = torch.load(latest_linear_ckpt, weights_only=False)["state_dict"]
+
+    # Assume checkpoint_state is the loaded state_dict from your checkpoint
+    new_state_dict = {}
+    for k, v in ckpt_state.items():
+        # Remove the "linearevaluation." prefix so that the keys match your model.
+        new_key = k.replace("model.", "")
+        new_state_dict[new_key] = v
+
+    # Then load the modified state_dict into your model
+    model.load_state_dict(new_state_dict, strict=False)
 
     target = datasets['validation'].dataset.dataset[config.task.outputs[0]]
     qs = 10
-    k = 5
+    k = 10
     n_unique = target.nunique()
     if n_unique < qs:
         bins = np.linspace(target.min(), target.max(), n_unique + 1)
@@ -222,13 +348,15 @@ def main(config):
     else:
         quantiles = pd.qcut(target, q=qs, labels=False, duplicates='drop')
 
-    threshold = 1
-    sample_ixs = datasets['validation'].dataset.dataset.loc[quantiles >= threshold].sample(k).index
+    thresholds = [1, 0]
+    for threshold in thresholds:
+        sample_ixs = datasets['validation'].dataset.dataset.loc[quantiles == threshold].sample(k).index
 
-    visualizer = AttributionVisualizer(model, device, config.base_dir, config.task.outputs[0], threshold)
-    for sample_ix in sample_ixs:
-        inputs, outputs = datasets['validation'].__getitem__(sample_ix)
-        visualizer.run_sample(inputs, outputs, sample_ix, config.task.outputs[0])
+        visualizer = AttributionVisualizer(config, model, device, threshold)
+        for sample_ix in tqdm(sample_ixs):
+            inputs, outputs = datasets['validation'].__getitem__(sample_ix)
+            visualizer.run_occlusion(inputs, outputs, sample_ix)
+            # visualizer.run_input_x_gradient(inputs, outputs, sample_ix)
 
 if __name__ == "__main__":
     main()

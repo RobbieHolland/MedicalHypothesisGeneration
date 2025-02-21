@@ -9,6 +9,19 @@ from Model.trainable_save import TrainableSave
 import wandb
 import os
 
+class ClassifierModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.num_heads = max(config.task.num_outs, 2)
+        self.classifier = nn.Linear(config.data.latent_dim, self.num_heads)
+
+    def forward(self, z):
+        z = torch.cat(z)
+        if not z.is_floating_point():
+            z = z.float()
+        return self.classifier(z)
+
 class LinearEvaluation(TrainableSave):
     """Multi-label (multi-head) linear evaluation with BCE loss and exponential LR decay."""
     def __init__(self, config, model):
@@ -159,19 +172,7 @@ def run(config):
 
     linear_eval = LinearEvaluation(config, model)
 
-    class ClassifierModel(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.num_heads = max(config.task.num_outs, 2)
-            self.classifier = nn.Linear(config.data.latent_dim, self.num_heads)
-
-        def forward(self, z):
-            z = torch.cat(z)
-            if not z.is_floating_point():
-                z = z.float()
-            return self.classifier(z)
-        
-    classifier_module = ClassifierModel()
+    classifier_module = ClassifierModel(config)
     for param in classifier_module.parameters():
         param.requires_grad = True
 

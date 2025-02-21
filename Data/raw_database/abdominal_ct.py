@@ -1,5 +1,4 @@
 from contrastive_3d.datasets import monai_datalists, monai_transforms, dataloaders
-from contrastive_3d.datasets.dataloaders import CTPersistentDataset
 from monai.data import DataLoader
 from torch.utils.data import Dataset
 import pandas as pd
@@ -7,10 +6,104 @@ from Data.raw_database.dataset_configs import  get_dataset_config
 
 import os
 
+import torch
+import sys
+import monai
+from monai.data import DataLoader
+from torch.utils.data import Subset
+import collections.abc
+from typing import Sequence, Union
+import random
+from copy import copy, deepcopy
+import shutil
+import tempfile
+from pathlib import Path
+from torch.utils.data import RandomSampler
+
+from monai.utils import MAX_SEED, convert_to_tensor, get_seed, look_up_option, min_version, optional_import
+from monai.data.utils import SUPPORTED_PICKLE_MOD, convert_tables_to_dicts, pickle_hashing
+
+from contrastive_3d.datasets import dataset_configs
+from contrastive_3d.utils import split_reports
+
+REPORT_GENERATION = False
+    
+
+class CTPersistentDataset(monai.data.PersistentDataset):
+    def __init__(self, data, transform, cache_dir=None):
+        super().__init__(data=data, transform=transform, cache_dir=cache_dir)
+        
+        print(f"Size of dataset: {self.__len__()}\n")
+
+    def _cachecheck(self, item_transformed):
+        hashfile = None
+        _item_transformed = deepcopy(item_transformed)
+        image_path = item_transformed.get('image')
+        image_data = {"image": item_transformed.get('image')}  # Assuming the image data is under the 'image' key
+
+        if self.cache_dir is not None and image_data is not None:
+            data_item_md5 = self.hash_func(image_data).decode("utf-8")  # Hash based on image data
+            # data_item_md5 += self.transform_hash
+            hashfile = self.cache_dir / f"{data_item_md5}.pt"
+
+        if hashfile is not None and hashfile.is_file():  # cache hit
+            # print("Cache hit for", image_data)
+            # print("Cache dir", self.cache_dir)
+            # sys.stdout.flush()
+            cached_image = torch.load(hashfile, weights_only=False)
+            _item_transformed['image'] = cached_image  # Update item_transformed with cached image
+            return _item_transformed
+
+        # If not cached, apply pre-transforms to the image and cache it
+        _image_transformed = self._pre_transform(image_data)['image']
+        _item_transformed['image'] = _image_transformed  # Update item_transformed with transformed image
+        if hashfile is None:
+            return _item_transformed
+        try:
+            # NOTE: Writing to a temporary directory and then using a nearly atomic rename operation
+            #       to make the cache more robust to manual killing of parent process
+            #       which may leave partially written cache files in an incomplete state
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                temp_hash_file = Path(tmpdirname) / hashfile.name
+                torch.save(
+                    obj=_image_transformed,
+                    f=temp_hash_file,
+                    pickle_module=look_up_option(self.pickle_module, SUPPORTED_PICKLE_MOD),
+                    pickle_protocol=self.pickle_protocol,
+                )
+                if temp_hash_file.is_file() and not hashfile.is_file():
+                    # On Unix, if target exists and is a file, it will be replaced silently if the user has permission.
+                    # for more details: https://docs.python.org/3/library/shutil.html#shutil.move.
+                    try:
+                        shutil.move(str(temp_hash_file), hashfile)
+                    except FileExistsError:
+                        pass
+        except PermissionError:  # project-monai/monai issue #3613
+            pass
+        return _item_transformed
+    
+    def _transform(self, index: int):
+        pre_random_item = self._cachecheck(self.data[index])
+        return self._post_transform(pre_random_item)
+
 class MultimodalCTDataset(Dataset):
-    def __init__(self, config, original_dataset, labels_df, autofilter=True):
+    def __init__(self, config, labels_df, raw_dl, split, autofilter=True):
         self.config = config
-        self.original_dataset = original_dataset  # Reference to the original dataset
+        self.raw_dl = raw_dl
+        self.split = split
+
+        # Temporary other dataset
+        # original_dataset = raw_dl[split].dataset
+        vector_db_path = os.path.join(config.base_dir, config.data.vector_database_in)
+        embedding_data = torch.load(os.path.join(vector_db_path, f"{split}.pt"), weights_only=False)
+        df = pd.DataFrame({
+            "sample_ids": embedding_data['sample_ids'],
+            "vectors": list(embedding_data["vectors"].detach().cpu().numpy())
+        })
+        original_dataset = df
+        original_dataset['anon_accession'] = original_dataset['sample_ids']
+
+        self.original_dataset = original_dataset.merge(pd.DataFrame(self.raw_dl.dataset.data), how='left', on='anon_accession')
 
         self.primary_key = 'anon_accession'
         # self.original_dataset_indexing = pd.DataFrame([l[self.primary_key] for l in self.original_dataset.data], columns=[self.primary_key])
@@ -52,8 +145,8 @@ class MultimodalCTDataset(Dataset):
     def filter(self):
         if self.config.task.output_filter:
             inclusion_mask = self.dataset[self.config.task.outputs].isin(self.config.task.output_filter).all(axis=1)
-            self.dataset = self.dataset.loc[inclusion_mask]
-            self.dataset = self.dataset.reset_index(drop=True)
+            self.dataset = self.dataset.loc[inclusion_mask].reset_index(drop=True)
+            # self.original_dataset = self.original_dataset.loc[inclusion_mask].reset_index(drop=True)
 
 class FilteredDataset(CTPersistentDataset):
     def __init__(self, config, data, transform, cache_dir, label_names):
