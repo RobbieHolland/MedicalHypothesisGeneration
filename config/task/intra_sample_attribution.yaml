@@ -1,4 +1,5 @@
-outputs: ['aortic_valve_calcification']
+# outputs: ['aortic_valve_calcification']
+outputs: ['splenomegaly']
 # outputs: ['ost']
 # outputs: ['htn']
 # outputs: ['ckd', 'ost', 'htn', 'ihd', 'dm', 'cvd']

@@ -32,6 +32,13 @@ class AttributionVisualizer:
         self.output_dir = os.path.join(analysis_dir, folder_name, config.task.outputs[0], f">={threshold}")
         print(f"Saving to ------------> {self.output_dir}")
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _get_occlusion_slices(self, index, shape, occlusion_size):
+        """Returns slices for occlusion, starting at 'index' and extending forward."""
+        return (slice(None),) + tuple(
+            slice(i, min(i + occlusion_size, s))  # Start at index, extend occlusion_size
+            for i, s in zip(index, shape[1:])
+        )
     
     def occlude(self, data, occlusion_size, step_size):
         """Generic occlusion function for both 1D (text) and 3D (image) inputs."""
@@ -45,9 +52,7 @@ class AttributionVisualizer:
             occluded = data.clone()
             
             # Build slices dynamically
-            slices = (slice(None),) + tuple(slice(max(0, i - occlusion_size // 2), 
-                                     min(i - occlusion_size // 2 + occlusion_size, s)) 
-                                for i, s in zip(index, shape[1:]))
+            slices = self._get_occlusion_slices(index, shape, occlusion_size)
 
             occluded[slices] = 0 if data.ndimension() > 2 else self.tokenizer.pad_token_id
             occlusions.append((occluded, index))
@@ -74,15 +79,14 @@ class AttributionVisualizer:
         
         prediction_class = int(outputs[self.config.task.outputs[0]])
         original_output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
+        print(outputs, original_output)
         
         for occluded_image, index in image_occlusions:
             inputs['image'] = occluded_image.to(self.device)
             output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
-            diff = (original_output - output).square().sum()
+            diff = (original_output - output).sum()
 
-            slices = (slice(None),) * (len(inputs['image'].shape) - len(index)) + tuple(
-                slice(i, min(i + occlusion_size_image, s)) for i, s in zip(index, inputs['image'].shape[-len(index):])
-            )
+            slices = self._get_occlusion_slices(index, inputs['image'].shape, occlusion_size_image)
             image_attributions[slices] += diff
         
         for occluded_tokens, index in text_occlusions:
@@ -91,9 +95,7 @@ class AttributionVisualizer:
             output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
             diff = (original_output - output).square().sum()
 
-            slices = (slice(None),) * (len(encoded['input_ids'].shape) - len(index)) + tuple(
-                slice(i, min(i + occlusion_size_text, s)) for i, s in zip(index, encoded['input_ids'].shape[-len(index):])
-            )
+            slices = self._get_occlusion_slices(index, encoded['input_ids'].shape, occlusion_size_text)
             text_attributions[slices] += diff
 
         image_attributions = image_attributions.detach().cpu()
