@@ -14,13 +14,15 @@ class MultimodalModel(nn.Module):
 
         # Store metadata separately (compress flags, output fields)
         self.inference_metadata = {
-            str(key): {'output_field': mapping['output_field'], 'compress': mapping['compress']}
+            str(key): {'forward_model_name': mapping['forward_model_name'], 
+                       'output_field': mapping['output_field'], 
+                       'compress': mapping['compress']}
             for key, mapping in inference_map.items()
         }
 
-    def update_inference_map(self, key, forward_model, output_field, compress=False):
+    def update_inference_map(self, key, forward_model_name, forward_model, output_field, compress=False):
         self.inference_map[str(key)] = forward_model
-        self.inference_metadata[str(key)] = {'output_field': output_field, 'compress': compress}
+        self.inference_metadata[str(key)] = {'forward_model_name': forward_model_name, 'output_field': output_field, 'compress': compress}
 
     def remove_compressed_entries(self):
         for k in [k for k in self.inference_metadata if self.inference_metadata[k]['compress']]:
@@ -44,7 +46,7 @@ class MultimodalModel(nn.Module):
 
             # Run forward pass using registered nn.Module
             output = self.inference_map[key](collected_inputs)
-            intermediate_outputs[metadata['output_field']] = output
+            intermediate_outputs[f"{metadata['forward_model_name']}/{metadata['output_field']}"] = output
 
         return intermediate_outputs
 

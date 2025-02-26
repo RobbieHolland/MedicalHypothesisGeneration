@@ -5,6 +5,7 @@ from Model.identity import IdentityModel
 from Model.merlin_wrapper import ImageEncoder, TextEncoder
 from Model.multimodal_model import MultimodalModel
 from Model.ct_fm_segresnet import load_ct_fm
+from Model.merlin_image_to_image import load_merlin_image_to_image
 
 class ModelBuilder():
     def __init__(self, config, device=None):
@@ -18,9 +19,10 @@ class ModelBuilder():
     def get_configured_model(self):
         # Define inference map with proper nn.Modules
         inference_map = {}
-        for input_field, forward_configuration in self.config.data.inference_map.items():
+        for input_field, forward_configuration in self.config.data.model.inference_map.items():
             inference_map[input_field] = {
-                'forward_model': self.get_model(forward_configuration.forward_model).to(self.device),
+                'forward_model_name': forward_configuration.forward_model_name,
+                'forward_model': self.get_model(forward_configuration.forward_model_name).to(self.device),
                 'compress': forward_configuration.compress,
                 'output_field': forward_configuration.output_field,
             }
@@ -43,6 +45,9 @@ class ModelBuilder():
         elif model_name == 'merlin_image_encoder':
             return ImageEncoder(self.compression_model)
             
+        elif model_name == 'merlin_image_to_image_ssl_encoder':
+            model = load_merlin_image_to_image(self.config)
+
         elif model_name == 'merlin_text_encoder':
             return TextEncoder(self.compression_model)
 

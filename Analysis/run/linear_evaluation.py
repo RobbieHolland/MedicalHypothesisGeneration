@@ -49,7 +49,7 @@ class LinearEvaluation(TrainableSave):
         self.max_validation_auc = 0
 
     def forward(self, x):
-        return self.model(x)['prediction']
+        return self.model(x)['classifier/prediction']
     
     def _shared_step(self, batch, phase):
         # dtype = torch.float16 if str(self.trainer.precision) in ["16", "16-mixed"] else torch.bfloat16 if str(self.precision) in ["bf16", "bf16-mixed"] else torch.float32
@@ -156,20 +156,15 @@ def run(config):
 
     # Load dataloaders
     from Data.get_data import get_data
-    datasets, dataloaders = get_data(config, device=device)
+    datasets, dataloaders = get_data(config, device=device, splits=['test', 'validation', 'train'])
     # datasets, dataloaders = get_data(config, splits=['validation'])
     
     # Load model to evaluate
     from Model.get_model import ModelBuilder
 
     model = ModelBuilder(config).get_model()
+    model.remove_compressed_entries()
     
-    keys_to_remove = [k for k in model.inference_map.keys() if model.inference_metadata[k]['compress']]
-
-    for k in keys_to_remove:
-        del model.inference_map[k]
-        del model.inference_metadata[k]  # Ensure metadata is also removed
-
     linear_eval = LinearEvaluation(config, model)
 
     classifier_module = ClassifierModel(config)
@@ -178,14 +173,14 @@ def run(config):
 
     classifier_module = classifier_module.to(device)
 
-    model.update_inference_map('multimodal_embedding', classifier_module, 'prediction', False)
+    model.update_inference_map('identity/multimodal_embedding', 'classifier', classifier_module, 'prediction', False)
     # model.update_inference_map('merlin/image', classifier_module, 'prediction', False)
 
     from util.lightning import validation_check_intervals
     val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(dataloaders['train']))
 
-    sweep_id = wandb.run.sweep_id if wandb.run.sweep_id else 'no_sweep'
-    save_path = os.path.join(config.pretrained_model_dir, wandb.run.project, wandb.run.group, sweep_id, config.data.name, config.task.outputs[0], wandb.run.name)
+    from util.path_util import linear_eval_path
+    save_path = os.path.join(linear_eval_path(config), wandb.run.name)
     print(f'Checkpoints will be saved to {save_path}')
 
     trainer = Trainer(

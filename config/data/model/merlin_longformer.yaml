@@ -1,0 +1,11 @@
+name: merlin_longformer
+
+inference_map:
+  findings:
+    forward_model_name: merlin_text_encoder
+    compress: True
+    output_field: merlin/findings
+  merlin_text_encoder/findings:
+    forward_model_name: identity
+    compress: False
+    output_field: multimodal_embedding

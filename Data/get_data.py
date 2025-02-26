@@ -11,6 +11,13 @@ from util.df import left_merge_new_fields
 
 import numpy as np
 
+def load_abdominal_ct_tabular_data(config):
+    # labs = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/labs.csv')
+    demographics = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/demographics.csv')
+    encounters = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/encounters.csv')
+    crosswalk = pd.read_csv('/dataNAS/data/ct_data/priority_crosswalk_all.csv')
+    return None
+
 def load_abdominal_ct_labels(config):
     labels_path = config.paths.five_year_prognosis_labels
     labels_df = pd.read_csv(labels_path).set_index("anon_accession")
@@ -27,6 +34,8 @@ def load_abdominal_ct_labels(config):
 
     labels_df = left_merge_new_fields(labels_df, phecode_findings_metadata, 'anon_accession')
     labels_df = left_merge_new_fields(labels_df, diagnosis_metadata, 'anon_accession')
+
+    tabular_data = load_abdominal_ct_tabular_data(config)
 
     return labels_df
 
@@ -56,10 +65,6 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'],
     data_type = config.data.type if not specific_data else specific_data
 
     if data_type == 'multimodal_abdominal_ct':
-        config = config.copy()
-        from Model.get_model import ModelBuilder
-        model = ModelBuilder(config, device=device).get_model()
-
         labels_df = load_abdominal_ct_labels(config)
 
         from contrastive_3d.datasets import dataloaders
@@ -72,6 +77,9 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'],
             "per_device_val_batch_size": config.task.batch_size,
             "per_device_test_batch_size": config.task.batch_size,
         }
+
+        from Model.get_model import ModelBuilder
+        model = ModelBuilder(config, device=device).get_model()
 
         # Louis' API
         raw_dl = get_dataloaders(config, dataset_config, include=splits, output_filter=config.task.output_filter)

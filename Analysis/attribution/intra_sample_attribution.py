@@ -21,15 +21,14 @@ import glob
 torch.utils.checkpoint.checkpoint = lambda func, *args, **kwargs: func(*args, **kwargs)
 
 class AttributionVisualizer:
-    def __init__(self, config, model, device, threshold, folder_name='feature_attribution'):
+    def __init__(self, config, model, device, threshold, output_dir):
         self.config = config
         self.model = model.eval().to(device)
         self.device = device
         self.model = model
         self.tokenizer = self.model.inference_map['findings'].model.model.encode_text.tokenizer
 
-        analysis_dir = os.path.join(config.base_dir, 'Analysis/output')
-        self.output_dir = os.path.join(analysis_dir, folder_name, config.task.outputs[0], f">={threshold}")
+        self.output_dir = os.path.join(output_dir, f">={threshold}")
         print(f"Saving to ------------> {self.output_dir}")
         os.makedirs(self.output_dir, exist_ok=True)
 
@@ -66,36 +65,31 @@ class AttributionVisualizer:
         inputs['image'] = torch.Tensor(inputs['image']).unsqueeze(0).to(self.device)
         encoded = self.tokenizer(inputs['findings'].lower(), return_tensors="pt", padding=True, truncation=True).to(self.device)
         
-        occlusion_size_image = 48  # Can be adapted dynamically
-        occlusion_step_image = 24
-        occlusion_size_text = 4
-        occlussion_step_text = 2
-        
-        image_occlusions = self.occlude(inputs['image'], occlusion_size_image, step_size=occlusion_step_image)
-        text_occlusions = self.occlude(encoded["input_ids"], occlusion_size_text, step_size=occlussion_step_text)
+        image_occlusions = self.occlude(inputs['image'], self.config.task.occlusion_size_image, step_size=self.config.task.occlusion_step_image)
+        text_occlusions = self.occlude(encoded["input_ids"], self.config.task.occlusion_size_text, step_size=self.config.task.occlussion_step_text)
         
         image_attributions = torch.zeros_like(inputs['image'])
         text_attributions = torch.zeros_like(encoded['input_ids'].float())
         
         prediction_class = int(outputs[self.config.task.outputs[0]])
-        original_output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
+        original_output = self.model(inputs)['classifier/prediction'][:,prediction_class].detach().cpu()
         print(outputs, original_output)
         
         for occluded_image, index in image_occlusions:
             inputs['image'] = occluded_image.to(self.device)
-            output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
+            output = self.model(inputs)['classifier/prediction'][:,prediction_class].detach().cpu()
             diff = (original_output - output).sum()
 
-            slices = self._get_occlusion_slices(index, inputs['image'].shape, occlusion_size_image)
+            slices = self._get_occlusion_slices(index, inputs['image'].shape, self.config.task.occlusion_size_image)
             image_attributions[slices] += diff
         
         for occluded_tokens, index in text_occlusions:
             encoded['input_ids'] = occluded_tokens
             inputs['findings'] = self.tokenizer.decode(occluded_tokens[0])
-            output = self.model(inputs)['prediction'][:,prediction_class].detach().cpu()
+            output = self.model(inputs)['classifier/prediction'][:,prediction_class].detach().cpu()
             diff = (original_output - output).square().sum()
 
-            slices = self._get_occlusion_slices(index, encoded['input_ids'].shape, occlusion_size_text)
+            slices = self._get_occlusion_slices(index, encoded['input_ids'].shape, self.config.task.occlusion_size_text)
             text_attributions[slices] += diff
 
         image_attributions = image_attributions.detach().cpu()
@@ -308,11 +302,11 @@ def main(config):
     model = ModelBuilder(config).get_model()
     model = model.eval()
 
-    keys_to_remove = [k for k in model.inference_map.keys() if model.inference_metadata[k]['compress']]
+    # keys_to_remove = [k for k in model.inference_map.keys() if model.inference_metadata[k]['compress']]
 
-    for k in keys_to_remove:
-        del model.inference_map[k]
-        del model.inference_metadata[k]  # Ensure metadata is also removed
+    # for k in keys_to_remove:
+    #     del model.inference_map[k]
+    #     del model.inference_metadata[k]  # Ensure metadata is also removed
 
     classifier_module = ClassifierModel(config)
     for param in classifier_module.parameters():
@@ -320,12 +314,17 @@ def main(config):
 
     classifier_module = classifier_module.to(device)
 
-    model.update_inference_map('multimodal_embedding', classifier_module, 'prediction', False)
+    model.update_inference_map('identity/multimodal_embedding', 'classifier', classifier_module, 'prediction', False)
 
     # Load the checkpoint's state dict
-    ckpt_files = glob.glob(os.path.join(config.pretrained_model_dir, config.task.predictor_path, 
-                                        config.task.outputs[0], '**/*.ckpt'), recursive=True)
+    from util.path_util import linear_eval_path
+    load_path = linear_eval_path(config, project='MultimodalMedicalHG', group='LinearEvaluation', sweep_id=config.task.sweep_id)
+    ckpt_files = glob.glob(os.path.join(load_path, '**/*.ckpt'), recursive=True)
+
     latest_linear_ckpt = max(ckpt_files, key=os.path.getctime) if ckpt_files else None
+    analysis_output_path = os.path.dirname(os.path.relpath(latest_linear_ckpt, config.pretrained_model_dir))
+    base_analysis_output_path = os.path.join(config.base_dir, 'Analysis/output/feature_attribution', analysis_output_path)
+
     print(f'Checkpoint files, taking latest of them: {ckpt_files} which was:\n{latest_linear_ckpt}')
 
     ckpt_state = torch.load(latest_linear_ckpt, weights_only=False)["state_dict"]
@@ -354,7 +353,7 @@ def main(config):
     for threshold in thresholds:
         sample_ixs = datasets['validation'].dataset.dataset.loc[quantiles == threshold].sample(k).index
 
-        visualizer = AttributionVisualizer(config, model, device, threshold)
+        visualizer = AttributionVisualizer(config, model, device, threshold, base_analysis_output_path)
         for sample_ix in tqdm(sample_ixs):
             inputs, outputs = datasets['validation'].__getitem__(sample_ix)
             visualizer.run_occlusion(inputs, outputs, sample_ix)

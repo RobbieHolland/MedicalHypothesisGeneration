@@ -1,0 +1,7 @@
+name: linear
+
+inference_map:
+  phecodes:
+    forward_model_name: identity
+    compress: False
+    output_field: multimodal_embedding

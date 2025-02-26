@@ -99,12 +99,13 @@ class CompressedMultimodalDataset(pl.LightningModule):
 
     def _apply_cached_compression(self):
         """Loads cached embeddings if available; otherwise, computes and caches them."""
+        print(f'Loading cached embeddings if available for {self.split} set')
         for field in self.model.inference_map.keys():
             inference_model = self.model.inference_map[field]
             inference_metadata = self.model.inference_metadata[field]
 
-            if inference_metadata['compress']:
-                compressed_field_name = inference_metadata['output_field']
+            if self.config.data.compress and inference_metadata['compress']:
+                compressed_field_name = os.path.join(inference_metadata['forward_model_name'], inference_metadata['output_field'])
                 cache_path = self._get_cache_path(compressed_field_name)
 
                 if os.path.exists(cache_path):

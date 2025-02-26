@@ -51,6 +51,7 @@ class CT_FM_SegResNet(ConceptModel):
 
         zs = []
         for image in x:
+            print(image.shape)
             if not self.model.is_valid_shape(image):
                 raise ValueError(f"Input spatial dims {image.shape} must be divisible by {self.model.shape_factor()}")
 

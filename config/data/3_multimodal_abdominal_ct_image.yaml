@@ -1,0 +1,31 @@
+defaults:
+  - model: merlin_imager_encoder
+
+type: multimodal_abdominal_ct
+
+merlin_dataset_variant: stanford
+fraction_train_data: 1.0
+
+vector_database_out: Data/vector_database
+vector_database_in: Data/vector_database/all_25_01_21/
+
+latent_dim: 2048
+# latent_dim: 2048
+# latent_dim: 512
+
+inputs: ['image']
+compress: True
+
+# inputs: ['image']
+# inputs: ['phecodes']
+# inputs: ['findings']
+
+# inference_map:
+#   image:
+#     forward_model: merlin_image_encoder
+#     compress: True
+#     output_field: merlin/image
+#   merlin/image:
+#     forward_model: identity
+#     compress: False
+#     output_field: multimodal_embedding

@@ -1,0 +1,27 @@
+defaults:
+  - model: harvard_ct_fm_image_encoder
+
+type: multimodal_abdominal_ct
+
+merlin_dataset_variant: stanford
+fraction_train_data: 1.0
+
+vector_database_out: Data/vector_database
+vector_database_in: Data/vector_database/all_25_01_21/
+
+latent_dim: 512
+# latent_dim: 2048
+# latent_dim: 512
+
+inputs: ['image_path']
+compress: True
+
+# inference_map:
+#   image_path:
+#     forward_model: ct_fm_image_encoder
+#     compress: True
+#     output_field: ct_fm/image
+#   ct_fm/image:
+#     forward_model: identity
+#     compress: False
+#     output_field: multimodal_embedding

@@ -1,0 +1,21 @@
+defaults:
+  - model: linear
+
+type: multimodal_abdominal_ct
+
+merlin_dataset_variant: stanford
+fraction_train_data: 1.0
+
+vector_database_out: Data/vector_database
+vector_database_in: Data/vector_database/all_25_01_21/
+
+latent_dim: 1692
+
+inputs: ['phecodes']
+compress: True
+
+# inference_map:
+#   phecodes:
+#     forward_model: identity
+#     compress: False
+#     output_field: multimodal_embedding

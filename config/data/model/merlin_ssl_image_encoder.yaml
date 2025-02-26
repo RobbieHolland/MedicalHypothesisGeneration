@@ -1,0 +1,11 @@
+name: merlin_ssl_image_encoder
+
+inference_map:
+  image:
+    forward_model_name: merlin_image_to_image_ssl_encoder
+    compress: True
+    output_field: z_image
+  merlin_image_to_image_ssl_encoder/z_image:
+    forward_model_name: identity
+    compress: False
+    output_field: multimodal_embedding

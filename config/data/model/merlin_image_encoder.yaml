@@ -1,0 +1,11 @@
+name: merlin_image_encoder
+
+inference_map:
+  image:
+    forward_model_name: merlin_image_encoder
+    compress: True
+    output_field: z_image
+  merlin_image_encoder/z_image:
+    forward_model_name: identity
+    compress: False
+    output_field: multimodal_embedding

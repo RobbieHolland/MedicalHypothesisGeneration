@@ -104,6 +104,7 @@ class MultimodalCTDataset(Dataset):
         original_dataset['anon_accession'] = original_dataset['sample_ids']
 
         self.original_dataset = original_dataset.merge(pd.DataFrame(self.raw_dl.dataset.data), how='left', on='anon_accession')
+        self.original_dataset['image_path'] = self.original_dataset['image']
 
         self.primary_key = 'anon_accession'
         # self.original_dataset_indexing = pd.DataFrame([l[self.primary_key] for l in self.original_dataset.data], columns=[self.primary_key])

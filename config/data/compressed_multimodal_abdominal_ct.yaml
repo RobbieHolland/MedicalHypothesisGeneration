@@ -1,0 +1,28 @@
+name: multimodal_abdominal_ct
+type: multimodal_abdominal_ct
+
+merlin_dataset_variant: stanford
+fraction_train_data: 1.0
+
+latent_dim: 2560
+# latent_dim: 512
+
+inputs: ['image', 'findings']
+# inputs: ['findings']
+
+vector_database_out: Data/vector_database
+vector_database_in: Data/vector_database/all_25_01_21/
+
+inference_map:
+  image:
+    model: merlin_image_encoder
+    compress: True
+    output_field: merlin/image
+  findings:
+    model: merlin_text_encoder
+    compress: True
+    output_field: merlin/findings
+  ('merlin/image', 'merlin/findings'):
+    model: identity
+    compress: False
+    output_field: multimodal_embedding
