@@ -1,0 +1,4 @@
+defaults:
+  - _self_
+  - data: 2_multimodal_abdominal_ct_text
+  - model: merlin_longformer

@@ -52,23 +52,11 @@ class LinearEvaluation(TrainableSave):
         return self.model(x)['classifier/prediction']
     
     def _shared_step(self, batch, phase):
-        # dtype = torch.float16 if str(self.trainer.precision) in ["16", "16-mixed"] else torch.bfloat16 if str(self.precision) in ["bf16", "bf16-mixed"] else torch.float32
-
         x = batch[0]  # expecting a dict of tensors
         y = batch[1]
 
-
-        # x = torch.Tensor(x).squeeze(0).to(self.dev)
-        # y = torch.Tensor(y).squeeze(0).to(self.dev)
-
-        # x = {'merlin/image': x}
-        # x = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[0].items()}
-        # y = {k: torch.Tensor(v).to(dtype) if torch.is_floating_point(v) else v for (k, v) in batch[1].items()}
         y = y[self.config.task.outputs[0]]
 
-        # if hasattr(y, "as_tensor"):
-        #     y = y.as_tensor()
-        
         y = y.to(torch.long)  # `one_hot` requires integer indices
         y = F.one_hot(y, num_classes=2).float()
 
@@ -156,7 +144,7 @@ def run(config):
 
     # Load dataloaders
     from Data.get_data import get_data
-    datasets, dataloaders = get_data(config, device=device, splits=['test', 'validation', 'train'])
+    datasets, dataloaders = get_data(config, device=device, splits=['train', 'validation', 'test'])
     # datasets, dataloaders = get_data(config, splits=['validation'])
     
     # Load model to evaluate
@@ -180,7 +168,8 @@ def run(config):
     val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(dataloaders['train']))
 
     from util.path_util import linear_eval_path
-    save_path = os.path.join(linear_eval_path(config), wandb.run.name)
+    run_name = wandb.run.name if wandb.run.name else 'no_run'
+    save_path = os.path.join(linear_eval_path(config), run_name)
     print(f'Checkpoints will be saved to {save_path}')
 
     trainer = Trainer(

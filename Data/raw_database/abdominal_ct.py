@@ -196,7 +196,7 @@ def get_dataloaders(hydra_config, config, train_files=None, val_files=None, test
             print(f"Creating {key} dataset...")
             datasets[key] = FilteredDataset(hydra_config, data=file_sources[key], transform=transforms, cache_dir=cache_dir, label_names=dataset_config.label_names)
     
-    num_workers = os.cpu_count()
+    num_workers = hydra_config.task.num_workers
     dataloaders = {key: DataLoader(datasets[key], batch_size=batch_sizes[key], shuffle=(key == 'train'), num_workers=num_workers) for key in include if key in datasets}
     
     return dataloaders

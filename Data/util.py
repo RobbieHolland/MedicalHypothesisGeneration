@@ -109,7 +109,7 @@ class CompressedEmbeddingDataset(EmbeddingDataset):
     def _apply_cached_compression(self, config, model_field_pairs):
         """Loads cached embeddings if available; otherwise, computes and caches them."""
         for model, input_field in model_field_pairs:
-            compressed_field_name = f'{config.data.model.naemodel_name}/{input_field}'
+            compressed_field_name = f'{config.model.naemodel_name}/{input_field}'
             cache_path = self._get_cache_path(config, compressed_field_name)
 
             if os.path.exists(cache_path):

@@ -13,9 +13,11 @@ import numpy as np
 
 def load_abdominal_ct_tabular_data(config):
     # labs = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/labs.csv')
-    demographics = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/demographics.csv')
-    encounters = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/encounters.csv')
-    crosswalk = pd.read_csv('/dataNAS/data/ct_data/priority_crosswalk_all.csv')
+    # demographics = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/demographics.csv')
+    # encounters = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/encounters.csv')
+    # crosswalk = pd.read_csv('/dataNAS/data/ct_data/priority_crosswalk_all.csv')
+    # radiology_report = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/radiology_report.csv')
+    # procedures = pd.read_csv('/dataNAS/data/ct_data/ct_ehr/1/procedures.csv')
     return None
 
 def load_abdominal_ct_labels(config):
@@ -98,7 +100,8 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'],
                 datasets[split], 
                 batch_size=config.task.batch_size, 
                 shuffle=True, 
-                # num_workers=min(8, raw_dl[split].num_workers), 
+                num_workers=config.task.num_workers, 
+                pin_memory=False,  # Avoid unnecessary pinning
                 # pin_memory=raw_dl[split].pin_memory, 
                 # collate_fn=datasets[split].custom_collate
             )

@@ -5,7 +5,7 @@ from monai.transforms import (
     Compose, LoadImage, EnsureType, Orientation,
     ScaleIntensityRange, CropForeground, Invert,
     Activations, AsDiscrete, KeepLargestConnectedComponent,
-    SaveImage, Spacing, DivisiblePad
+    SaveImage, Spacing, DivisiblePad, Lambda, ResizeWithPadOrCrop
 )
 from monai.inferers import SlidingWindowInferer
 from Model.concept_model import ConceptModel
@@ -22,22 +22,23 @@ class CT_FM_SegResNet(ConceptModel):
             cache_dir=model_dir,
         )
 
-        # Preprocessing pipeline
+        self.MAX_SIZE = (400, 512, 512)
+
+        # Define conditional resize function
+        def conditional_resize(image):
+            if any(s > m for s, m in zip(image.shape[-3:], self.MAX_SIZE)):  # Check if any dimension is too large
+                return ResizeWithPadOrCrop(spatial_size=self.MAX_SIZE)(image)
+            return image  # Return unchanged if already within MAX_SIZE
+
         self.preprocess = Compose([
-            LoadImage(ensure_channel_first=True),  # Load image and ensure channel dimension
-            EnsureType(),                         # Ensure correct data type
-            Orientation(axcodes="SPL"),           # Standardize orientation
-            # Scale intensity to [0,1] range, clipping outliers
-            ScaleIntensityRange(
-                a_min=-1024,    # Min HU value
-                a_max=2048,     # Max HU value
-                b_min=0,        # Target min
-                b_max=1,        # Target max
-                clip=True       # Clip values outside range
-            ),
-            CropForeground(),    # Remove background to reduce computation
+            LoadImage(ensure_channel_first=True),
+            EnsureType(),
+            Orientation(axcodes="SPL"),
+            ScaleIntensityRange(a_min=-1024, a_max=2048, b_min=0, b_max=1, clip=True),
+            CropForeground(),
             Spacing(pixdim=(3.0, 1.0, 1.0), mode="bilinear"),
             DivisiblePad(k=16),
+            Lambda(conditional_resize),  # Only resizes if needed
         ])
 
     def forward(self, x):

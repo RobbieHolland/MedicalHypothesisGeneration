@@ -1,5 +1,7 @@
 from pytorch_lightning import LightningModule, Trainer, Callback
 import torch
+import gc
+import numpy as np
 
 class EmbeddingExtractor(LightningModule):
     def __init__(self, model, input_field, fields):
@@ -7,18 +9,24 @@ class EmbeddingExtractor(LightningModule):
         self.model = model
         self.input_field = input_field
         self.fields = fields
-        self.model.eval()  # Ensure the model is in eval mode for embeddings
+        self.model.eval()  # Ensure the model is in eval mode
 
     def forward(self, x):
-        # Forward pass through the model
         return self.model.latent(x)
 
-    def test_step(self, batch, batch_idx):
-        # Process the batch
-        inputs = batch[0][self.input_field]
-        batch_fields = {field: batch[1][field] for field in self.fields}
-        batch_output = self.forward(inputs)  # Extract embeddings
-        return {"output": batch_output.detach().cpu(), **batch_fields}
+    def predict_step(self, batch, batch_idx):
+        with torch.no_grad():
+            inputs = batch[0][self.input_field]
+            batch_fields = {field: batch[1][field] for field in self.fields}
+            batch_output = self.forward(inputs)
+            batch_output_np = batch_output.cpu().detach().numpy()
+            
+            # Clean up references
+            del batch_output, inputs, batch
+            gc.collect()
+            torch.cuda.empty_cache()
+            
+            return {"output": batch_output_np, **batch_fields}
 
 class EmbeddingExtractionCallback(Callback):
     def __init__(self, all_fields, fields):
@@ -26,32 +34,24 @@ class EmbeddingExtractionCallback(Callback):
         self.all_fields = all_fields
         self.fields = fields
 
-    def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        # Collect embeddings and associated field values
+    def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         for key, value in outputs.items():
             if key not in self.all_fields:
                 self.all_fields[key] = []
             self.all_fields[key].extend(value)
 
 def extract_vectors_for_split(config, dataloader, model, input_field, fields):
-    # Wrap model in LightningModule
     embedding_model = EmbeddingExtractor(model, input_field, fields)
-
-    # Initialize field storage
     all_fields = {}
-
-    # Create a Trainer for embedding extraction
+    
     trainer = Trainer(
-        accelerator="gpu",  # Use GPU if available
-        # accelerator="cpu",
+        accelerator="gpu",
         devices=1,
-        # devices='cpu',
-        # devices=1 if torch.cuda.is_available() else None,
         callbacks=[EmbeddingExtractionCallback(all_fields, fields)],
-        limit_test_batches=config.task.max_steps,
+        limit_predict_batches=config.task.max_steps,
     )
+    
+    trainer.predict(embedding_model, dataloader)
 
-    # Run the test phase to extract embeddings
-    trainer.test(embedding_model, dataloader)
-
-    return all_fields
+    output_fields = {key: np.stack(all_fields[key]) for key in all_fields}
+    return output_fields

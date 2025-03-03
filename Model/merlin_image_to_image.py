@@ -11,6 +11,7 @@ import copy
 from contrastive_3d.models.inflated_convnets_pytorch.src import inflate
 from contrastive_3d.utils import window_level
 
+# torch.utils.checkpoint.checkpoint = lambda func, *args, **kwargs: func(*args, **kwargs)
 
 class MerlinImageToImage(torch.nn.Module):
     def __init__(self, resnet2d, frame_nb=16, class_nb=1000, conv_class=False, return_skips=True, vision_ssl=False, classifier_ssl=False, multihead=False, hidden_dim=2048):
@@ -141,18 +142,34 @@ class MerlinImageToImage(torch.nn.Module):
         #     x = checkpoint.checkpoint(self.layer3, x)
         #     x = checkpoint.checkpoint(self.layer4, x)
         # else:
-        x = checkpoint.checkpoint(self.layer1, x)
+        # x = checkpoint.checkpoint(self.layer1, x)
+        # if self.return_skips:
+        #     skips.append(x.permute(0, 1, 3, 4, 2))
+        # x = checkpoint.checkpoint(self.layer2, x)
+        # if self.return_skips:
+        #     skips.append(x.permute(0, 1, 3, 4, 2))
+        # x = checkpoint.checkpoint(self.layer3, x)
+        # if self.return_skips:
+        #     skips.append(x.permute(0, 1, 3, 4, 2))
+        # x = checkpoint.checkpoint(self.layer4, x)
+        # if self.return_skips:
+        #     skips.append(x.permute(0, 1, 3, 4, 2))
+        x = self.layer1(x)
         if self.return_skips:
             skips.append(x.permute(0, 1, 3, 4, 2))
-        x = checkpoint.checkpoint(self.layer2, x)
+
+        x = self.layer2(x)
         if self.return_skips:
             skips.append(x.permute(0, 1, 3, 4, 2))
-        x = checkpoint.checkpoint(self.layer3, x)
+
+        x = self.layer3(x)
         if self.return_skips:
             skips.append(x.permute(0, 1, 3, 4, 2))
-        x = checkpoint.checkpoint(self.layer4, x)
+
+        x = self.layer4(x)
         if self.return_skips:
             skips.append(x.permute(0, 1, 3, 4, 2))
+
 
         if self.conv_class:
 
@@ -302,10 +319,10 @@ class Bottleneck3d(torch.nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        if x.requires_grad:
-            out = checkpoint.checkpoint(run_function, x)
-        else:
-            out = run_function(x)
+        # if x.requires_grad:
+            # out = checkpoint.checkpoint(run_function, x)
+        # else:
+        out = run_function(x)
 
         out = out + residual
         out = self.relu(out)

@@ -6,6 +6,7 @@ from Model.merlin_wrapper import ImageEncoder, TextEncoder
 from Model.multimodal_model import MultimodalModel
 from Model.ct_fm_segresnet import load_ct_fm
 from Model.merlin_image_to_image import load_merlin_image_to_image
+from Model.mock_model import load_mock
 
 class ModelBuilder():
     def __init__(self, config, device=None):
@@ -19,7 +20,7 @@ class ModelBuilder():
     def get_configured_model(self):
         # Define inference map with proper nn.Modules
         inference_map = {}
-        for input_field, forward_configuration in self.config.data.model.inference_map.items():
+        for input_field, forward_configuration in self.config.model.inference_map.items():
             inference_map[input_field] = {
                 'forward_model_name': forward_configuration.forward_model_name,
                 'forward_model': self.get_model(forward_configuration.forward_model_name).to(self.device),
@@ -59,6 +60,9 @@ class ModelBuilder():
         
         elif model_name == 'configured_model':
             model = self.get_configured_model()
+
+        elif model_name == 'mock':
+            model = load_mock(self.config)
 
         else:
             raise ValueError(f"Unknown model name: {model_name}")

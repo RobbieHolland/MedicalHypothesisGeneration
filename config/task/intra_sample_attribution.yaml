@@ -11,11 +11,13 @@ num_outs: 1
 
 sweep_id: no_sweep
 
-# occlusion_size_image: 48  # Can be adapted dynamically
-occlusion_size_image: 160  # Can be adapted dynamically
-# occlusion_step_image: 24
-occlusion_step_image: 80
-# occlusion_size_text: 4
+occlusion_size_image: 48  # Can be adapted dynamically
+# occlusion_size_image: 160  # Can be adapted dynamically
+occlusion_step_image: 24
+# occlusion_step_image: 80
 occlusion_size_text: 4
-# occlussion_step_text: 2
+# occlusion_size_text: 4
 occlussion_step_text: 2
+# occlussion_step_text: 2
+
+num_workers: 1

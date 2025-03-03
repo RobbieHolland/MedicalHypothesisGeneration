@@ -1,0 +1,11 @@
+name: mock_image_encoder
+
+inference_map:
+  image:
+    forward_model_name: mock
+    compress: True
+    output_field: z_image
+  mock/z_image:
+    forward_model_name: identity
+    compress: False
+    output_field: multimodal_embedding

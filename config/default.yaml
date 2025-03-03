@@ -3,8 +3,11 @@ defaults:
   - paths: stanford
   - multimodal_pretraining: default
   - sparse_autoencoder: basic
-  - data: abdominal_ct
+  - preset: 1_phecodes
   - task: prognosis
+
+model: ${preset.model}
+data: ${preset.data}
 
 wandb_api_token: ${paths.wandb_api_token}
 wandb_project: 'MultimodalMedicalHG'
@@ -17,4 +20,4 @@ pretrained_model_dir: ${paths.pretrained_model_dir}
 
 base_dir: ${paths.base_dir}
 
-model_name: identity
+model_name: configured_model

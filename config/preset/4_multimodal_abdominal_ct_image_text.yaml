@@ -1,0 +1,4 @@
+defaults:
+  - _self_
+  - data: 4_multimodal_abdominal_ct_image_text
+  - model: merlin_image_encoder_longformer

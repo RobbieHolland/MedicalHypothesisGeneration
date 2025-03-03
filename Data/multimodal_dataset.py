@@ -54,26 +54,24 @@ class CompressedMultimodalDataset(pl.LightningModule):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        # sample = self.dataset.loc[idx]
-
-        # Load image & existing metadata using the original dataset
-        # all_data = {}
-
-        if any([k not in self.dataset.dataset.columns for k in self.input_keys]):
+        if any(k not in self.dataset.dataset.columns for k in self.input_keys):
             raise NotImplementedError("Any keys not in metadata must instead query raw dataset")
-        
-        inputs = self.vectorized_inputs[idx]
-        outputs = self.vectorized_outputs[idx]
 
-        if any([k in self.dataset.original_dataset.columns for k in self.input_keys]):
+        # Make a copy of the necessary inputs/outputs to avoid holding references
+        inputs = self.vectorized_inputs[idx].copy()
+        outputs = self.vectorized_outputs[idx].copy()
+
+        # If raw dataset values are needed, load only the necessary fields
+        if any(k in self.dataset.original_dataset.columns for k in self.input_keys):
             index = self.dataset.original_dataset[
-                self.dataset.original_dataset['anon_accession'] == self.dataset.dataset.loc[idx, 'anon_accession']
+                self.dataset.original_dataset['anon_accession'] == self.dataset.dataset.at[idx, 'anon_accession']
             ].index
+
             raw_data = self.dataset.raw_dl.dataset.__getitem__(index.item())
-            raw_inputs = {k: v for (k, v) in raw_data.items() if k in self.input_keys}
-            raw_outputs = {k: v for (k, v) in raw_data.items() if k in self.output_keys}
-            inputs.update(raw_inputs)
-            outputs.update(raw_outputs)
+
+            # Merge raw data safely (no in-place modification)
+            inputs = {**inputs, **{k: raw_data[k] for k in self.input_keys if k in raw_data}}
+            outputs = {**outputs, **{k: raw_data[k] for k in self.output_keys if k in raw_data}}
 
         return inputs, outputs
 
@@ -109,11 +107,11 @@ class CompressedMultimodalDataset(pl.LightningModule):
                 cache_path = self._get_cache_path(compressed_field_name)
 
                 if os.path.exists(cache_path):
-                    print(f"Loading cached embeddings for {field} from {cache_path}")
+                    print(f"===> Loading cached embeddings for {field} from {cache_path}")
                     compressed_values = torch.load(cache_path, weights_only=False)
 
                 else:
-                    print(f"Computing embeddings for {field}")
+                    print(f"===> Computing embeddings for {field}")
                     self.output_keys.append('anon_accession')
                     self.set_vectorized_data()
 
@@ -121,22 +119,22 @@ class CompressedMultimodalDataset(pl.LightningModule):
                     self.output_keys.pop(-1)
                     self.set_vectorized_data()
 
-                    def process_values(v):
-                        if all(isinstance(x, torch.Tensor) for x in v):
-                            return torch.stack(v)  # Stack tensors
-                        elif all(isinstance(x, np.ndarray) for x in v):
-                            return torch.stack([torch.tensor(x) for x in v])  # Convert NumPy arrays & stack
-                        elif all(isinstance(x, str) for x in v):
-                            return v  # Keep strings as lists
-                        else:
-                            return v  # Mixed types, leave as is
+                    # def process_values(v):
+                    #     if all(isinstance(x, torch.Tensor) for x in v):
+                    #         return torch.stack(v)  # Stack tensors
+                    #     elif all(isinstance(x, np.ndarray) for x in v):
+                    #         return torch.stack([torch.tensor(x) for x in v])  # Convert NumPy arrays & stack
+                    #     elif all(isinstance(x, str) for x in v):
+                    #         return v  # Keep strings as lists
+                    #     else:
+                    #         return v  # Mixed types, leave as is
 
-                    compressed_values = {k: process_values(v) for k, v in compressed_values.items()}
+                    # compressed_values = {k: process_values(v) for k, v in compressed_values.items()}
 
                     # compressed_values = {k: torch.stack(v) for (k, v) in compressed_values.items()}
 
                     torch.save(compressed_values, cache_path)
-                    print(f"Saved embeddings to {cache_path}")
+                    print(f"===> Saved embeddings to {cache_path}")
 
                 stored_embedding_name = "output" if "output" in compressed_values else "vectors"
                 compressed_values[compressed_field_name] = list(np.array(torch.Tensor(compressed_values[stored_embedding_name])))
