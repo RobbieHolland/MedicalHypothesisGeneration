@@ -5,11 +5,11 @@ inference_map:
     forward_model_name: merlin_image_to_image_ssl_encoder
     compress: True
     output_field: z_image
-  findings:
-    forward_model_name: merlin_text_encoder
+  image:
+    forward_model_name: merlin_image_encoder
     compress: True
-    output_field: z_findings
-  ('merlin_image_to_image_ssl_encoder/z_image', 'merlin_text_encoder/z_findings'):
+    output_field: z_image
+  ('merlin_image_to_image_ssl_encoder/image', 'merlin_image_encoder/z_image'):
     forward_model_name: identity
     compress: False
     output_field: multimodal_embedding

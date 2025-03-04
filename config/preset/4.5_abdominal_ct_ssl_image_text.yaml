@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - data: ct_image_text
+  - model: merlin_ssl_image_encoder_longformer
+
+latent_dim: 2560

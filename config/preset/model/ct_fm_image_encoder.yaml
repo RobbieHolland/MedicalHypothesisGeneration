@@ -1,4 +1,4 @@
-name: harvard_image_encoder
+name: ct_fm_image_encoder
 
 inference_map:
   image_path:

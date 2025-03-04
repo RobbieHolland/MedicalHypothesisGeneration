@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - data: phecodes
+  - model: linear
+
+latent_dim: 1692

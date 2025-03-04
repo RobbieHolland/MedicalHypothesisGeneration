@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - data: ct_image_text
+  - model: ct_fm_image_encoder_merlin_longformer
+
+latent_dim: 1024

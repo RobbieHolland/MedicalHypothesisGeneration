@@ -1,4 +1,6 @@
 defaults:
   - _self_
-  - data: 3_multimodal_abdominal_ct_image
+  - data: ct_image
   - model: merlin_image_encoder
+
+latent_dim: 2048

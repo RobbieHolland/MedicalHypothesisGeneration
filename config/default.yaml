@@ -1,9 +1,8 @@
 defaults:
   - _self_
   - paths: stanford
-  - multimodal_pretraining: default
   - sparse_autoencoder: basic
-  - preset: 1_phecodes
+  - preset: 1_abdominal_phecodes
   - task: prognosis
 
 model: ${preset.model}

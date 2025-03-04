@@ -14,7 +14,8 @@ class ClassifierModel(nn.Module):
         super().__init__()
         self.config = config
         self.num_heads = max(config.task.num_outs, 2)
-        self.classifier = nn.Linear(config.data.latent_dim, self.num_heads)
+        print(f'Creating classifier with {config.preset.latent_dim}x{self.num_heads} weights')
+        self.classifier = nn.Linear(config.preset.latent_dim, self.num_heads)
 
     def forward(self, z):
         z = torch.cat(z)

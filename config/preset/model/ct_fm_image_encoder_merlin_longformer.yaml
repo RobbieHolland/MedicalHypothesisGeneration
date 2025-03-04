@@ -1,15 +1,15 @@
-name: merlin_ssl_image_encoder_longformer
+name: ct_fm_image_encoder_longformer
 
 inference_map:
   image:
-    forward_model_name: merlin_image_to_image_ssl_encoder
+    forward_model_name: ct_fm_image_encoder
     compress: True
     output_field: z_image
   findings:
     forward_model_name: merlin_text_encoder
     compress: True
     output_field: z_findings
-  ('merlin_image_to_image_ssl_encoder/z_image', 'merlin_text_encoder/z_findings'):
+  ('ct_fm_image_encoder/z_image', 'merlin_text_encoder/z_findings'):
     forward_model_name: identity
     compress: False
     output_field: multimodal_embedding

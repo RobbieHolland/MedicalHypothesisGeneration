@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - data: ct_image_path
+  - model: ct_fm_image_encoder
+
+latent_dim: 512

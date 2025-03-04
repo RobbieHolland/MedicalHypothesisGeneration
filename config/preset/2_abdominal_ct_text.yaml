@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - data: ct_text
+  - model: merlin_longformer
+
+latent_dim: 512

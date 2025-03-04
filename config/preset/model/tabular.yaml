@@ -1,0 +1,11 @@
+name: tabular_processor
+
+inference_map:
+  tabular:
+    forward_model_name: tabular_processor
+    compress: False
+    output_field: f_tabular
+  tabular_processor/f_tabular:
+    forward_model_name: identity
+    compress: False
+    output_field: multimodal_embedding
