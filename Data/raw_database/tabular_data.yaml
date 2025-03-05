@@ -1,0 +1,1 @@
+tabular_fields: ['Gender', 'Race', 'Ethnicity', 'Marital Status', 'Recent Height cm', 'Recent Weight kg', 'Recent BMI', 'Smoking Hx', 'Alcohol Use']

@@ -3,9 +3,8 @@ import glob
 import torch
 
 class TrainableSave(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self):
         super().__init__()
-        self.config = config
 
     # def find_checkpoint(self, checkpoint_code=None):
     #     checkpoint_code = self.config.model.checkpoint_path if checkpoint_code is None else checkpoint_code

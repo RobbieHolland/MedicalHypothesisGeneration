@@ -7,20 +7,21 @@ import torch.utils.checkpoint as checkpoint
 import torch.nn as nn
 import torchvision
 import copy
+from Model.concept_model import ConceptModel
 
 from contrastive_3d.models.inflated_convnets_pytorch.src import inflate
 from contrastive_3d.utils import window_level
 
 # torch.utils.checkpoint.checkpoint = lambda func, *args, **kwargs: func(*args, **kwargs)
 
-class MerlinImageToImage(torch.nn.Module):
+class MerlinImageToImage(ConceptModel):
     def __init__(self, resnet2d, frame_nb=16, class_nb=1000, conv_class=False, return_skips=True, vision_ssl=False, classifier_ssl=False, multihead=False, hidden_dim=2048):
         """
         Args:
             conv_class: Whether to use convolutional layer as classifier to
                 adapt to various number of frames
         """
-        super(MerlinImageToImage, self).__init__()
+        super(ConceptModel, self).__init__()
         self.return_skips = return_skips
         self.conv_class = conv_class
 
@@ -56,7 +57,6 @@ class MerlinImageToImage(torch.nn.Module):
                     out_channels=class_nb,
                     kernel_size=(1, 1, 1),
                     bias=True)            
-                
             
             self.contrastive_head = torch.nn.Conv3d(
                 in_channels=self.hidden_dim,

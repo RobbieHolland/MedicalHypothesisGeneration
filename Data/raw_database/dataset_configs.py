@@ -32,6 +32,8 @@ def get_stanford_datalist(split_type: str, fraction_train_data=None, config=None
     data_frame = pd.read_csv(
         dataset_config.meta_data_path
     )
+    data_frame['image_file'] = data_frame['image_file'].apply(lambda f: f.replace('/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/', '/dataNAS/data/ct_data/abct_compressed/'))
+
     image_paths = glob.glob(
         os.path.join(dataset_config.image_data_path, "*.nii.gz")
     )
@@ -169,77 +171,77 @@ DATASETS = {
     "stanford": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=get_stanford_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_report_generation": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_report_generation_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_zero_shot_cls": DatasetConfig(
         meta_data_path="/dataNAS/people/akkumar/contrastive-3d/data/merged_labels_diseases.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_zero_shot_cls_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_ascites": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels_ascites.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_ascites_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_pleural_effusion": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels_pleural_effusion.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_pleural_effusion_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_renal_mass": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels_renal_mass.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_renal_mass_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_hepatic_steatosis": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels_hepatic_steatosis.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_hepatic_steatosis_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_appendicitis": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels_appendicitis.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_appendicitis_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_gallstones": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels_gallstones.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_gallstones_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_impressions": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/stanford_labels.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_impressions_datalist,
         transforms=monai_transforms.transforms_image,
     ),
     "stanford_disease_prediction_all": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/labels_adjusted_all_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_disease_prediction_all_datalist,
         transforms=monai_transforms.transforms_image,
         label_names=["cvd", "ihd", "htn", "dm", "ckd", "ost"],
@@ -248,7 +250,7 @@ DATASETS = {
     "stanford_ckd_disease_prediction": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/labels_adjusted_all_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_ckd_disease_prediction_datalist,
         transforms=monai_transforms.transforms_image,
         label_names=["ckd"],
@@ -257,7 +259,7 @@ DATASETS = {
     "stanford_htn_disease_prediction": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/labels_adjusted_all_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_htn_disease_prediction_datalist,
         transforms=monai_transforms.transforms_image,
         label_names=["htn"],
@@ -266,7 +268,7 @@ DATASETS = {
     "stanford_ihd_disease_prediction": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/labels_adjusted_all_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_ihd_disease_prediction_datalist,
         transforms=monai_transforms.transforms_image,
         label_names=["ihd"],
@@ -275,7 +277,7 @@ DATASETS = {
     "stanford_dm_disease_prediction": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/labels_adjusted_all_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_dm_disease_prediction_datalist,
         transforms=monai_transforms.transforms_image,
         label_names=["dm"],
@@ -284,7 +286,7 @@ DATASETS = {
     "stanford_ost_disease_prediction": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/labels_adjusted_all_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_ost_disease_prediction_datalist,
         transforms=monai_transforms.transforms_image,
         label_names=["ost"],
@@ -293,7 +295,7 @@ DATASETS = {
     "stanford_ost_disease_prediction": DatasetConfig(
         meta_data_path="/dataNAS/people/lblankem/contrastive-3d/data/labels_adjusted_all_v1.csv",
         cache_dir="/dataNAS/people/lblankem/abct_imaging_data/cache_dir",
-        image_data_path="/dataNAS/people/lblankem/abct_imaging_data/abct_compressed/",
+        image_data_path="/dataNAS/data/ct_data/abct_compressed",
         get_datalist=monai_datalists.get_stanford_cvd_disease_prediction_datalist,
         transforms=monai_transforms.transforms_image,
         label_names=["cvd"],

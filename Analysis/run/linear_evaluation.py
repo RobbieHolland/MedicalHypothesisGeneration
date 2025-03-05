@@ -8,6 +8,7 @@ import hydra
 from Model.trainable_save import TrainableSave
 import wandb
 import os
+from Model.concept_model import ConceptModel
 
 class ClassifierModel(nn.Module):
     def __init__(self, config):
@@ -23,10 +24,10 @@ class ClassifierModel(nn.Module):
             z = z.float()
         return self.classifier(z)
 
-class LinearEvaluation(TrainableSave):
+class LinearEvaluation(ConceptModel):
     """Multi-label (multi-head) linear evaluation with BCE loss and exponential LR decay."""
     def __init__(self, config, model):
-        super().__init__(config)
+        super().__init__()
         self.save_hyperparameters()
 
         self.dev = torch.device('cuda:0')
@@ -152,6 +153,7 @@ def run(config):
     from Model.get_model import ModelBuilder
 
     model = ModelBuilder(config).get_model()
+    model.configure(datasets['train'].dataset.dataset.copy())
     model.remove_compressed_entries()
     
     linear_eval = LinearEvaluation(config, model)
@@ -165,13 +167,17 @@ def run(config):
     model.update_inference_map('identity/multimodal_embedding', 'classifier', classifier_module, 'prediction', False)
     # model.update_inference_map('merlin/image', classifier_module, 'prediction', False)
 
-    from util.lightning import validation_check_intervals
+    from util.lightning import validation_check_intervals, StepBasedEarlyStopping
     val_check_interval, check_val_every_n_epoch = validation_check_intervals(config, len(dataloaders['train']))
 
     from util.path_util import linear_eval_path
     run_name = wandb.run.name if wandb.run.name else 'no_run'
     save_path = os.path.join(linear_eval_path(config), run_name)
     print(f'Checkpoints will be saved to {save_path}')
+
+    from pytorch_lightning.callbacks import EarlyStopping
+    early_stop = StepBasedEarlyStopping(monitor="val_auc", mode="max", patience=1000)
+    model_save = pl.callbacks.ModelCheckpoint(dirpath=save_path, save_top_k=1, mode='max', monitor="validation_auc_epoch")
 
     trainer = Trainer(
         max_steps=config.task.max_steps,
@@ -180,7 +186,7 @@ def run(config):
         accelerator="gpu",
         devices=1,
         # precision=16,
-        callbacks=[pl.callbacks.ModelCheckpoint(dirpath=save_path, save_top_k=1, mode='max', monitor="validation_auc_epoch")],
+        callbacks=[model_save, early_stop],
     )
     trainer.validate(linear_eval, dataloaders['validation'])
     trainer.fit(linear_eval, dataloaders['train'], dataloaders['validation'])

@@ -1,7 +1,7 @@
 name: tabular_processor
 
 inference_map:
-  tabular:
+  tabular_fields:
     forward_model_name: tabular_processor
     compress: False
     output_field: f_tabular

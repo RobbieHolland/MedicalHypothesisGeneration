@@ -7,6 +7,7 @@ from Model.multimodal_model import MultimodalModel
 from Model.ct_fm_segresnet import load_ct_fm
 from Model.merlin_image_to_image import load_merlin_image_to_image
 from Model.mock_model import load_mock
+from Model.tabular import TabularProcessor
 
 class ModelBuilder():
     def __init__(self, config, device=None):
@@ -42,6 +43,9 @@ class ModelBuilder():
 
         elif model_name == 'merlin':
             model = load_model(self.config)
+
+        elif model_name == 'tabular_processor':
+            model = TabularProcessor(self.config)
 
         elif model_name == 'merlin_image_encoder':
             return ImageEncoder(self.compression_model)

@@ -8,6 +8,8 @@ import torch
 from Data.util import EmbeddingDataset, EmbeddingDataModule, CompressedEmbeddingDataset
 from Data.multimodal_dataset import CompressedMultimodalDataset
 from util.df import left_merge_new_fields
+from Data.eda.ehr_demographics import get_tabular_data
+import yaml
 
 import numpy as np
 
@@ -37,7 +39,12 @@ def load_abdominal_ct_labels(config):
     labels_df = left_merge_new_fields(labels_df, phecode_findings_metadata, 'anon_accession')
     labels_df = left_merge_new_fields(labels_df, diagnosis_metadata, 'anon_accession')
 
-    tabular_data = load_abdominal_ct_tabular_data(config)
+    tabular_data = get_tabular_data(config)
+    with open("Data/raw_database/tabular_data.yaml", "r") as file:
+        tabular_fields = yaml.safe_load(file)['tabular_fields']
+    tabular_data['tabular_fields'] = list(tabular_data[tabular_fields].to_numpy())
+    
+    labels_df = left_merge_new_fields(labels_df, tabular_data, 'anon_accession')
 
     return labels_df
 
@@ -62,6 +69,38 @@ def load_merlin_embeddings_and_labels(config, model_field_pairs=[]):
         # datasets[split] = EmbeddingDataset(config, merged_df)
     return datasets
 
+@staticmethod
+def custom_collate(batch):
+    inputs, outputs = zip(*batch)  # Separate inputs and outputs
+
+    def stack_dicts(items):
+        """Convert a list of dicts into a single dict with stacked values."""
+        collated = {}
+
+        for key in items[0].keys():
+            values = [item[key] for item in items]
+
+            if isinstance(values[0], torch.Tensor):
+                collated[key] = torch.stack(values)
+            elif isinstance(values[0], np.ndarray):
+                if np.issubdtype(values[0].dtype, np.number):  # Ensure array contains only numbers
+                    collated[key] = torch.tensor(np.stack(values))
+                else:
+                    collated[key] = np.array(values)  # Contains non-numeric types, fallback to list
+            elif all(isinstance(v, (int, float, bool)) for v in values):  # Only pure numbers
+                collated[key] = torch.tensor(values)
+            elif all(isinstance(v, (list, np.ndarray, torch.Tensor)) for v in values):
+                if all(isinstance(v, (int, float, bool)) for sublist in values for v in (sublist if isinstance(sublist, (list, np.ndarray)) else [sublist])):  
+                    # Ensures nested lists/arrays are numeric before stacking
+                    collated[key] = torch.tensor(np.stack(values))
+                else:
+                    collated[key] = np.array(values)  # Mixed types in lists, fallback
+            else:
+                collated[key] = np.array(values)  # Mixed types, return as is
+                
+        return collated
+
+    return stack_dicts(inputs), stack_dicts(outputs)
 
 def get_data(config, specific_data=None, splits=['train', 'validation', 'test'], device=None):
     data_type = config.data.type if not specific_data else specific_data
@@ -103,8 +142,9 @@ def get_data(config, specific_data=None, splits=['train', 'validation', 'test'],
                 num_workers=config.task.num_workers, 
                 pin_memory=False,  # Avoid unnecessary pinning
                 # pin_memory=raw_dl[split].pin_memory, 
-                # collate_fn=datasets[split].custom_collate
+                collate_fn=custom_collate
             )
+
         x = 3
 
     else:

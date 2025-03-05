@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - data: ct_tabular
+  - model: tabular
+
+latent_dim: 77

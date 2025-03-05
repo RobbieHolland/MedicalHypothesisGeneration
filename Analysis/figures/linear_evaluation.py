@@ -42,9 +42,10 @@ class Figures:
         with open("Analysis/slurm/sweep/linear_evaluation.yaml", "r") as file:
             sweep_config = yaml.safe_load(file)
         output_order = [o[0] for o in sweep_config['parameters']['task.outputs']['values']]
+        data_order = sweep_config['parameters']['preset']['values']
 
-        heatmap_data = best_runs.pivot(index='task.outputs', columns='data', values=config.task.outcome)
-        heatmap_data = heatmap_data.reindex(output_order, columns=config.task.data_order)
+        heatmap_data = best_runs.pivot(index='task.outputs', columns='preset', values=config.task.outcome)
+        heatmap_data = heatmap_data.reindex(output_order, columns=data_order)
 
         # Plot heatmap
         plt.figure(figsize=(10, 1 * len(heatmap_data)))

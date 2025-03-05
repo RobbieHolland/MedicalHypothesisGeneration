@@ -4,7 +4,7 @@ import torch.utils.checkpoint as checkpoint
 from Model.concept_model import ConceptModel
 
 # Image Encoder Model
-class ImageEncoder(nn.Module):
+class ImageEncoder(ConceptModel):
     def __init__(self, compression_model):
         super().__init__()
         self.model = compression_model
@@ -13,7 +13,7 @@ class ImageEncoder(nn.Module):
         return self.model.latent(torch.cat(image_list, dim=0))
 
 # Text Encoder Model
-class TextEncoder(nn.Module):
+class TextEncoder(ConceptModel):
     def __init__(self, compression_model):
         super().__init__()
         self.model = compression_model
@@ -32,7 +32,7 @@ class OSTModel(nn.Module):
 
 class MerlinWrapper(ConceptModel):
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
         from Model import clip_model_3d
         self.model = clip_model_3d.Clip3D(
             config={

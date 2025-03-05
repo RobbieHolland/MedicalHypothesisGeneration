@@ -13,7 +13,7 @@ import os
 
 class CT_FM_SegResNet(ConceptModel):
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
 
         model_dir = os.path.join(config.pretrained_model_dir, 'pretrained_models')
         os.makedirs(model_dir, exist_ok=True)

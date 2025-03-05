@@ -66,3 +66,5 @@ slurm/
 *.nii
 *.pkl
 *.html
+
+Data/raw_database/dataset_configs.py

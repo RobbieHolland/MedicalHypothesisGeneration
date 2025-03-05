@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+from Model.concept_model import ConceptModel
 
 # Updated Multimodal Model
-class MultimodalModel(nn.Module):
+class MultimodalModel(ConceptModel):
     def __init__(self, config, inference_map):
         super().__init__()
         self.config = config
@@ -28,6 +29,11 @@ class MultimodalModel(nn.Module):
         for k in [k for k in self.inference_metadata if self.inference_metadata[k]['compress']]:
             del self.inference_map[k]
             del self.inference_metadata[k]
+
+    def configure(self, dataset):
+        print('Configuring models to dataset')
+        for key, model in self.inference_map.items():
+            model.configure(dataset.copy())
 
     def forward(self, inputs):
         intermediate_outputs = {}

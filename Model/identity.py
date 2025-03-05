@@ -5,7 +5,7 @@ from Model.concept_model import ConceptModel
 
 class IdentityModel(ConceptModel):
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
         self.config = config
 
     def forward(self, x):
@@ -15,4 +15,3 @@ class IdentityModel(ConceptModel):
     
     def latent(self, x):
         return self(x)
-
